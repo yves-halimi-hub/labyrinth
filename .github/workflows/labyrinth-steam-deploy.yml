@@ -1,0 +1,63 @@
+name: Build and Deploy Labyrinth to Steam
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  buildWindows:
+    name: Build Labyrinth for Windows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          lfs: true
+
+      - name: Cache Unity Library
+        uses: actions/cache@v3
+        with:
+          path: EFYV-labyrinth/Library
+          key: Library-${{ hashFiles('EFYV-labyrinth/Assets/**', 'EFYV-labyrinth/Packages/**') }}
+          restore-keys: |
+            Library-
+
+      - name: Unity Build Action
+        uses: game-ci/unity-builder@v2
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+        with:
+          projectPath: EFYV-labyrinth
+          targetPlatform: StandaloneWindows64
+          buildName: EFYV-Labyrinth
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: Build-Windows
+          path: build/StandaloneWindows64
+
+  deployToSteam:
+    name: Deploy Labyrinth to Steam
+    needs: buildWindows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: Build-Windows
+          path: build/StandaloneWindows64
+
+      - name: Push Build via SteamPipe Action
+        uses: game-ci/steam-deploy@v2
+        with:
+          username: ${{ secrets.STEAM_USERNAME }}
+          password: ${{ secrets.STEAM_PASSWORD }}
+          appId: '123456'
+          buildDescription: 'Automated CI/CD Release ${{ github.ref_name }}'
+          rootPath: build/StandaloneWindows64
+          depot1Path: '.'

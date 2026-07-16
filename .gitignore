@@ -1,0 +1,33 @@
+# .NET verification output
+**/bin/
+**/obj/
+**/TestResults/
+
+# Python caches
+**/__pycache__/
+*.py[cod]
+
+# Unity generated state
+EFYV-labyrinth/[Ll]ibrary/
+EFYV-labyrinth/[Tt]emp/
+EFYV-labyrinth/[Oo]bj/
+EFYV-labyrinth/[Ll]ogs/
+EFYV-labyrinth/[Uu]ser[Ss]ettings/
+EFYV-labyrinth/[Bb]uild/
+EFYV-labyrinth/[Bb]uilds/
+EFYV-labyrinth/MemoryCaptures/
+
+# Local IDE and OS state
+.idea/
+.vs/
+.vscode/
+*.suo
+*.user
+*.userprefs
+.DS_Store
+Thumbs.db
+
+# Interrupted publications and local autosaves
+*.tmp
+*.staging
+*.efyvmake.autosave
