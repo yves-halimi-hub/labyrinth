@@ -34,6 +34,14 @@ namespace EFYVBackend.Core.Math
 
         // PERFORMANCE: 100% Branchless 4-way direction resolution via memory-cast float analysis
         // Extracts exponent/mantissa directly to bypass all floating point math unit branching overhead.
+        // DELIBERATE edge semantics (the branchless bit inspection defines the contract):
+        // - The raw sign BIT decides horizontal facing, so -0f behaves as negative (Left) even
+        //   though -0f == 0f, and (0f, 0f) resolves to Right.
+        // - Magnitudes compare by raw absolute bits, so NaN outranks every finite value and its
+        //   sign bit picks the direction; infinities compare like huge finite values.
+        // - Equal |x| and |y| ties resolve horizontally (Left/Right).
+        // Gameplay only ever feeds finite movement axes; the special values must stay stable
+        // because the verification suites pin them as the documented contract.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe FacingDirection Get4WayDirection(float moveX, float moveY)
         {
@@ -108,9 +116,20 @@ namespace EFYVBackend.Core.Math
             return FastMax(min, FastMin(max, val));
         }
 
+        // Ceiling with DEFINED behavior on the full float range (clamping, never throwing):
+        // - NaN returns 0 (a deterministic no-op offset instead of the runtime-defined cast).
+        // - Values at or above 2^31 (including +infinity) clamp to int.MaxValue.
+        // - Values at or below -2^31 (including -infinity) clamp to int.MinValue.
+        // Previously out-of-range inputs leaked the runtime-defined (int) cast and the
+        // unconditional +1 could wrap a huge positive input to a large NEGATIVE ceiling.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int FastCeilToInt(float value)
         {
+            // 2^31 is exactly representable as a float; int.MaxValue itself is not.
+            const float IntRangeMagnitude = 2147483648f;
+            if (float.IsNaN(value)) return 0;
+            if (value >= IntRangeMagnitude) return int.MaxValue;
+            if (value <= -IntRangeMagnitude) return int.MinValue;
             int truncated = (int)value;
             return value > truncated ? truncated + BackendConfig.Math.StepPositive : truncated;
         }
@@ -174,16 +193,41 @@ namespace EFYVBackend.Core.Math
             return y;
         }
 
-        // High-performance Vector Normalization
+        // High-performance Vector Normalization.
+        // The common path (finite, normal squared magnitude) is bit-identical to the historical
+        // implementation. Vectors whose squared magnitude would overflow to infinity or underflow
+        // below the smallest normal float are first rescaled by their largest absolute component,
+        // so huge (e.g. 2e19) and tiny (e.g. 1e-30) finite vectors now normalize correctly instead
+        // of returning non-finite garbage or staying unnormalized. An exact-zero vector stays zero.
+        // Non-finite inputs still produce non-finite outputs (documented, not a supported input).
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void FastNormalize(ref float x, ref float y)
         {
+            // Smallest positive normal float: below this the quake-style inverse sqrt loses
+            // its exponent trick, so we reroute through the rescaled path.
+            const float MinNormalFloat = 1.17549435e-38f;
             float sqrMag = (x * x) + (y * y);
-            if (sqrMag == BackendConfig.Math.NormalizedMin) return;
-            
-            float invSqrt = FastInvSqrt(sqrMag);
-            x *= invSqrt;
-            y *= invSqrt;
+            if (sqrMag == BackendConfig.Math.NormalizedMin && x == BackendConfig.Math.NormalizedMin && y == BackendConfig.Math.NormalizedMin) return;
+
+            if (sqrMag >= MinNormalFloat && sqrMag <= float.MaxValue)
+            {
+                float invSqrt = FastInvSqrt(sqrMag);
+                x *= invSqrt;
+                y *= invSqrt;
+                return;
+            }
+
+            // Overflow/underflow rescue: divide by the largest absolute component so the squared
+            // magnitude lands in [1, 2], then normalize the rescaled vector.
+            float absX = FastAbs(x);
+            float absY = FastAbs(y);
+            float maxComponent = absX > absY ? absX : absY;
+            float rescaledX = x / maxComponent;
+            float rescaledY = y / maxComponent;
+            float rescaledSqrMag = (rescaledX * rescaledX) + (rescaledY * rescaledY);
+            float rescaledInvSqrt = FastInvSqrt(rescaledSqrMag);
+            x = rescaledX * rescaledInvSqrt;
+            y = rescaledY * rescaledInvSqrt;
         }
 
         // PRE-COMPUTED TRIGONOMETRY (DEPRECATED)
@@ -227,6 +271,16 @@ namespace EFYVBackend.Core.Math
             return x;
         }
 
+        // Parabolic sine approximation y = x*(A - B*|x|) with A = 4/pi, B = 4/pi^2 for x in
+        // [-pi, pi]. REVIEWED, REFINEMENT DELIBERATELY OMITTED: the classic second step
+        // (y = P*(y*|y| - y) + y, P ~= 0.225) would cut the ~0.056 max error to ~0.001 at the
+        // cost of one extra multiply-add per call, but every animation reference model in the
+        // three verification suites (walk/jitter frame generators and their pixel-exact pins)
+        // is built on THIS exact polynomial - adding the term would shift generated pixels and
+        // invalidate exported animation fixtures. If precision requirements ever grow, add a
+        // separate refined function instead of changing this one. Note |y| can marginally
+        // exceed 1 near the extremes (max ~= A^2/(4B) with float rounding), which consumers
+        // like GenerateJitterFrame account for when validating derived offsets.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static float FastSinApproxNormalized(float x)
         {

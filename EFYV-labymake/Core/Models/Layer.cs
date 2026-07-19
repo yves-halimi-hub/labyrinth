@@ -68,7 +68,11 @@ namespace EFYVLabyMake.Core.Models
 
             Data = new EFYVBackend.Core.Models.LayerData { Block = new EFYVBackend.Core.Data.FastSchemaBlock() };
             Name = name;
-            Pixels = new PixelColor[width * height];
+            // CHECKED multiply, matching SubElement's size contract: an unchecked wrap here
+            // (e.g. 65536 x 65537 -> 65536 elements) would leave Width/Height reporting the
+            // full canvas while SetPixel's unchecked unsafe write path reaches far beyond the
+            // real buffer - silent heap corruption instead of an OverflowException.
+            Pixels = new PixelColor[checked(width * height)];
             Data.IsVisible = Config.Layer.DefaultVisibility;
             Data.Opacity = Config.Layer.DefaultOpacity;
             Data.Width = width;

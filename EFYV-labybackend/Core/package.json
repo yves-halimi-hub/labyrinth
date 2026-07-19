@@ -1,0 +1,7 @@
+{
+  "name": "com.efyv.labybackend",
+  "version": "0.1.0",
+  "displayName": "EFYV LabyBackend",
+  "description": "Engine-neutral EFYV Labyrinth backend primitives (collections, config/schema data, export, IO, math, memory, models, physics). This directory doubles as a local Unity package: the game project references it from Packages/manifest.json as file:../../EFYV-labybackend/Core and compiles it into the EFYVBackend.Core assembly. The package root is Core (not the repository root) so the sibling Tests directory and its bin/obj build output are never imported by Unity.",
+  "unity": "6000.3"
+}

@@ -35,6 +35,47 @@ namespace EFYVLabyMake.Core.Logic
         }
     }
 
+    // Item #7: the destructive layer filters a host can offer. Kinds map 1:1
+    // onto the DesignerSession.Apply*Filter methods.
+    public enum LayerFilterKind
+    {
+        Blur,
+        Outline,
+        Glow,
+        ColorShift
+    }
+
+    // Host-facing description of one filter: which parameters it takes and
+    // their session-enforced bounds (single-sourced from the config).
+    public sealed class LayerFilterDefinition
+    {
+        public LayerFilterKind Kind { get; }
+        public string DisplayLabel { get; }
+        public bool UsesRadius { get; }
+        public int MinRadius { get; }
+        public int MaxRadius { get; }
+        public bool UsesColor { get; }
+        public bool UsesHsvDeltas { get; }
+
+        internal LayerFilterDefinition(
+            LayerFilterKind kind,
+            string displayLabel,
+            bool usesRadius,
+            int minRadius,
+            int maxRadius,
+            bool usesColor,
+            bool usesHsvDeltas)
+        {
+            Kind = kind;
+            DisplayLabel = displayLabel;
+            UsesRadius = usesRadius;
+            MinRadius = minRadius;
+            MaxRadius = maxRadius;
+            UsesColor = usesColor;
+            UsesHsvDeltas = usesHsvDeltas;
+        }
+    }
+
     public sealed class DesignableCategory
     {
         public string Label { get; }
@@ -130,6 +171,48 @@ namespace EFYVLabyMake.Core.Logic
             return categories;
         }
 
+        // Item #7: the filter catalog for a host's filter menu. Static data by
+        // design - the entries mirror the DesignerSession.Apply*Filter surface
+        // and its config-owned parameter bounds.
+        public List<LayerFilterDefinition> GetLayerFilters()
+        {
+            return new List<LayerFilterDefinition>
+            {
+                new LayerFilterDefinition(
+                    LayerFilterKind.Blur,
+                    Config.Filter.LabelBlur,
+                    true,
+                    Config.Filter.MinBlurRadius,
+                    Config.Filter.MaxBlurRadius,
+                    false,
+                    false),
+                new LayerFilterDefinition(
+                    LayerFilterKind.Outline,
+                    Config.Filter.LabelOutline,
+                    false,
+                    Config.Common.EmptyCount,
+                    Config.Common.EmptyCount,
+                    true,
+                    false),
+                new LayerFilterDefinition(
+                    LayerFilterKind.Glow,
+                    Config.Filter.LabelGlow,
+                    true,
+                    Config.Filter.MinGlowRadius,
+                    Config.Filter.MaxGlowRadius,
+                    true,
+                    false),
+                new LayerFilterDefinition(
+                    LayerFilterKind.ColorShift,
+                    Config.Filter.LabelColorShift,
+                    false,
+                    Config.Common.EmptyCount,
+                    Config.Common.EmptyCount,
+                    false,
+                    true)
+            };
+        }
+
         public EFYVProject CreateNewProject(string categoryLabel)
         {
             if (categoryLabel == null) return null;
@@ -155,6 +238,35 @@ namespace EFYVLabyMake.Core.Logic
             if (definition.IsDirectional)
                 project.AssetProperties[Config.Entity.KeyFacing] = selected.Facing;
             return project;
+        }
+
+        // Item #33: creates a LINKED 4-direction project - one project holding
+        // all four facings of the entity, starting on DefaultActiveFacing with
+        // the other three facing sets empty. Returns null for unknown or
+        // non-directional asset types (mirroring CreateNewProject's null-on-
+        // invalid contract).
+        public EFYVProject CreateNewLinkedDirectionalProject(string assetType)
+        {
+            SchemaDefinition definition;
+            if (!schemaService.TryGetTypeDefinition(assetType, out definition) ||
+                !definition.IsDirectional)
+                return null;
+
+            var project = new EFYVProject(definition.AssetType);
+            foreach (var field in definition.Fields)
+                project.AssetProperties[field.FieldName] = field.DefaultValue;
+            project.AssetProperties[Config.Entity.KeyFacing] = Config.Entity.DefaultActiveFacing;
+            project.Directional = new DirectionalState(Config.Entity.DefaultActiveFacing);
+            return project;
+        }
+
+        // Item #33: the facing switcher catalog for a host's facing buttons.
+        // Non-empty exactly when the project is a linked directional project.
+        public IReadOnlyList<string> GetFacingOptions(EFYVProject project)
+        {
+            if (project == null || project.Directional == null)
+                return System.Array.Empty<string>();
+            return (string[])Config.Schema.FacingChoices.Clone();
         }
 
         public List<DesignerProperty> GetEditableProperties(EFYVProject project)

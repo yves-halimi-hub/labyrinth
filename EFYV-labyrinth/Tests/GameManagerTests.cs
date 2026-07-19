@@ -277,10 +277,18 @@ internal static partial class Program
         Check(healing.Apply(player));
         Near(75f, player.CurrentHealth);
 
-        var buff = new TemporaryBuffPurchase("buff", 7, "speed", 12.5f);
-        Equal("speed", buff.BuffId);
+        // #34: buffs are real now - a recognized id registers a ticking buff on
+        // the player; unknown ids are rejected so purchases refund.
+        var buff = new TemporaryBuffPurchase("buff", 7, Config.Game.Merchant.PotionBuffId, 12.5f);
+        Equal(Config.Game.Merchant.PotionBuffId, buff.BuffId);
         Near(12.5f, buff.Duration);
+        float speedBeforeBuff = player.BaseSpeed;
         Check(buff.Apply(player));
+        Equal(1, player.ActiveBuffCount);
+        Near(speedBeforeBuff * PlayerController.MoveSpeedBuffMultiplier, player.BaseSpeed);
+        var unknownBuff = new TemporaryBuffPurchase("buff2", 7, "speed", 12.5f);
+        Check(!unknownBuff.Apply(player), "Unknown buff ids must be rejected.");
+        Equal(1, player.ActiveBuffCount);
         var weaponPurchase = new WeaponUpgradePurchase("weapon", 9, "wand");
         Equal("wand", weaponPurchase.WeaponId);
 
@@ -370,6 +378,9 @@ internal static partial class Program
         var player = (PlayerController)playerObject.AddComponent(typeof(PlayerController), true);
         Same(player, PlayerController.Instance);
         Same(weaponSystem, player.WeaponSystem);
+        // A free weapon slot now always allows normal offers (#22), so cap the
+        // inventory at ONE slot to exercise the special-attack flip below.
+        weaponSystem.Initialize(1);
         var normalWeapon = CreateComponent<ProbeWeapon>(invokeAwake: true);
         normalWeapon.Configure(1f, 1f, 1);
         Check(weaponSystem.TryAddWeapon(normalWeapon));
@@ -434,5 +445,255 @@ internal static partial class Program
         Equal(null, GetField<Texture2D>(effect, "_blurTex"));
         Equal(null, GetField<Texture2D>(effect, "_scratchTex"));
         UnityEngine.Object.Destroy(pool.gameObject);
+    }
+
+    // batch1/game-combat agent: runtime upgrade-loop wiring (#22).
+    private static void TestUpgradeLoopRuntimeWiring()
+    {
+        var playerObject = new GameObject("upgrade-loop-player");
+        playerObject.AddComponent<SpriteRenderer>();
+        var weaponSystem = playerObject.AddComponent<WeaponController>();
+        var player = (PlayerController)playerObject.AddComponent(typeof(PlayerController), true);
+        Same(player, PlayerController.Instance);
+        weaponSystem.Initialize(2);
+        Check(weaponSystem.HasFreeWeaponSlot);
+
+        var upgrades = CreateComponent<UpgradeManager>(invokeAwake: true);
+        var poolPrefab = CreateComponent<ProbeWeapon>(invokeAwake: true);
+        poolPrefab.Configure(1f, 3f);
+        upgrades.normalWeaponPool = new EFYV.Core.Weapons.Weapon[] { poolPrefab };
+
+        int specialRequests = 0;
+        upgrades.OnSpecialAttacksRequested += (count, penalty) => specialRequests++;
+
+        // An EMPTY weapon list with free capacity offers normal upgrades: the run
+        // must not flip into the special-attack phase on first level-up.
+        FastRandom.SetSeed(0x22AAu);
+        player.LevelUp();
+        Check(!upgrades.IsSpecialAttackPhase,
+            "An empty inventory must never flip the special-attack phase.");
+        Equal(0, specialRequests);
+
+        // No UI subscriber: the manager applied the level-up choices directly -
+        // both free slots are filled from the weapon pool, then the lowest-level
+        // weapon is raised. New weapons carry the player's faction.
+        Equal(2, weaponSystem.activeWeapons.Count);
+        Check(!weaponSystem.HasFreeWeaponSlot);
+        Check(weaponSystem.activeWeapons[0] is ProbeWeapon);
+        Check(weaponSystem.activeWeapons[1] is ProbeWeapon);
+        NotSame(poolPrefab, weaponSystem.activeWeapons[0]);
+        NotSame(poolPrefab, weaponSystem.activeWeapons[1]);
+        NotSame(weaponSystem.activeWeapons[0], weaponSystem.activeWeapons[1]);
+        Equal(Faction.Player, weaponSystem.activeWeapons[0].OwnerFaction);
+        Equal(Faction.Player, weaponSystem.activeWeapons[1].OwnerFaction);
+        // Two grants land at the initial level; every remaining choice raised the
+        // lowest weapon by one, so the level sum equals the offered choice count.
+        Equal(Config.Game.Weapons.Inventory.UpgradeChoicesNormalPhase,
+            weaponSystem.activeWeapons[0].Level + weaponSystem.activeWeapons[1].Level);
+
+        // Chest path: OpenChest routes through the same application path and raises
+        // the lowest-level weapon.
+        upgrades.OpenChest(1);
+        Equal(Config.Game.Weapons.Inventory.UpgradeChoicesNormalPhase + 1,
+            weaponSystem.activeWeapons[0].Level + weaponSystem.activeWeapons[1].Level);
+
+        // A UI subscriber takes over: choices are forwarded and nothing auto-applies.
+        int normalRequests = 0;
+        int offeredChoices = -1;
+        upgrades.OnNormalUpgradesRequested += count => { normalRequests++; offeredChoices = count; };
+        upgrades.OpenChest(5);
+        Equal(1, normalRequests);
+        Equal(5, offeredChoices);
+        Equal(Config.Game.Weapons.Inventory.UpgradeChoicesNormalPhase + 1,
+            weaponSystem.activeWeapons[0].Level + weaponSystem.activeWeapons[1].Level);
+
+        // Direct application API: reports how many upgrades landed and stops at max.
+        int maxLevel = Config.Game.Weapons.Inventory.MaxLevel;
+        Equal(2 * (maxLevel - 2), upgrades.ApplyNormalUpgrades(1000));
+        Equal(maxLevel, weaponSystem.activeWeapons[0].Level);
+        Equal(maxLevel, weaponSystem.activeWeapons[1].Level);
+        Equal(0, upgrades.ApplyNormalUpgrades(3));
+
+        // Everything maxed with no free slot: the next selection flips the run into
+        // the special-attack phase.
+        upgrades.OnPlayerLevelUp();
+        Check(upgrades.IsSpecialAttackPhase);
+        Equal(1, specialRequests);
+
+        FastRandom.SetSeed(Config.Backend.Random.DefaultSeed);
+    }
+
+    // batch2/game-managers agent: #34 - meta-progression stat fold, timed buffs,
+    // and event-driven achievement triggers, plus the #24 achievement-id fixes.
+    private static void TestManagersMetaProgressionAndAchievementTriggers()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), "efyv-meta-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        Application.persistentDataPath = tempRoot;
+        try
+        {
+            var save = CreateComponent<SaveManager>(invokeAwake: true);
+            save.currentSaveData = PlayerMetaSchema.Default();
+
+            // Buy legacy upgrades: MaxHealth twice (+0.1 each), MoveSpeed once (+0.05).
+            save.currentSaveData.TotalCoinsCollected = 1000;
+            Check(save.SpendCoinsOnLegacyStat(StatSchema.MaxHealth, 1));
+            Check(save.SpendCoinsOnLegacyStat(StatSchema.MaxHealth, 1));
+            Check(save.SpendCoinsOnLegacyStat(StatSchema.MoveSpeed, 1));
+            // And toon points: one MaxHealth (+0.1), one MoveSpeed (+0.05).
+            save.AddCoinsToToon("meta-toon", 2000);
+            Check(save.SpendToonStatPoint("meta-toon", StatSchema.MaxHealth));
+            Check(save.SpendToonStatPoint("meta-toon", StatSchema.MoveSpeed));
+
+            // #34: player initialization folds the account-legacy multipliers into
+            // MaxHealth/BaseSpeed (no toon selected yet).
+            PlayerController player = CreateTestPlayer();
+            float legacyHealthMultiplier = 1f + (2f * Config.Game.Progression.StatUpgradeAdditiveTenPercent);
+            float legacySpeedMultiplier = 1f + Config.Game.Progression.StatUpgradeAdditiveFivePercent;
+            Near(Config.Game.Player.DefaultMaxHealth * legacyHealthMultiplier, player.MaxHealth);
+            Near(player.MaxHealth, player.CurrentHealth, 0f);
+            Near(Config.Game.Player.DefaultBaseSpeed * legacySpeedMultiplier, player.BaseSpeed);
+
+            // Toon selection folds toon stats on top: combined = legacy + (toon - 1).
+            player.ReinitializeForToon("meta-toon");
+            float combinedHealthMultiplier =
+                legacyHealthMultiplier + Config.Game.Progression.StatUpgradeAdditiveTenPercent;
+            float combinedSpeedMultiplier =
+                legacySpeedMultiplier + Config.Game.Progression.StatUpgradeAdditiveFivePercent;
+            Near(Config.Game.Player.DefaultMaxHealth * combinedHealthMultiplier, player.MaxHealth);
+            Near(Config.Game.Player.DefaultBaseSpeed * combinedSpeedMultiplier, player.BaseSpeed);
+            // Re-initialization recomputes from the base stats - never compounds.
+            player.ReinitializeForToon("meta-toon");
+            Near(Config.Game.Player.DefaultMaxHealth * combinedHealthMultiplier, player.MaxHealth);
+            Near(Config.Game.Player.DefaultBaseSpeed * combinedSpeedMultiplier, player.BaseSpeed);
+
+            // Corrupt multipliers (NaN, negative) fall back to the neutral 1x.
+            save.currentSaveData.LegacyStats.SetFloat((int)StatSchema.MaxHealth, float.NaN);
+            save.currentSaveData.LegacyStats.SetFloat((int)StatSchema.MoveSpeed, -3f);
+            player.ReinitializeForToon(null);
+            Near(Config.Game.Player.DefaultMaxHealth, player.MaxHealth);
+            Near(Config.Game.Player.DefaultBaseSpeed, player.BaseSpeed);
+            save.currentSaveData.LegacyStats = FastSchemaBlock.DefaultStats();
+            player.ReinitializeForToon(null);
+            Near(Config.Game.Player.DefaultMaxHealth, player.MaxHealth);
+
+            // #34 timed buffs: the haste potion multiplies BaseSpeed, ticks down
+            // centrally in the player's Update, and reverts on expiry.
+            float baseSpeed = player.BaseSpeed;
+            var potion = new TemporaryBuffPurchase(Config.Game.Merchant.PotionName,
+                Config.Game.Merchant.PotionCost, Config.Game.Merchant.PotionBuffId, 2f);
+            Check(potion.Apply(player));
+            Equal(1, player.ActiveBuffCount);
+            Near(baseSpeed * PlayerController.MoveSpeedBuffMultiplier, player.BaseSpeed);
+            // Re-applying keeps the longer timer and never stacks the multiplier.
+            Check(player.ApplyTimedBuff(Config.Game.Merchant.PotionBuffId, 1f));
+            Equal(1, player.ActiveBuffCount);
+            Near(baseSpeed * PlayerController.MoveSpeedBuffMultiplier, player.BaseSpeed);
+            Time.deltaTime = 1.5f;
+            Invoke(player, "Update"); // 2.0s - 1.5s: still active.
+            Equal(1, player.ActiveBuffCount);
+            Near(baseSpeed * PlayerController.MoveSpeedBuffMultiplier, player.BaseSpeed);
+            Invoke(player, "Update"); // Expired: reverted exactly to the base.
+            Equal(0, player.ActiveBuffCount);
+            Near(baseSpeed, player.BaseSpeed);
+            // Rejections: unknown ids and non-positive durations never register.
+            Check(!player.ApplyTimedBuff("NotABuff", 5f));
+            Check(!player.ApplyTimedBuff(Config.Game.Merchant.PotionBuffId, 0f));
+            Check(!player.ApplyTimedBuff(Config.Game.Merchant.PotionBuffId, float.NaN));
+            Check(!player.ApplyTimedBuff(null, 1f));
+            Equal(0, player.ActiveBuffCount);
+
+            // #34 purchase API: success deducts, unknown-buff failure refunds.
+            var merchant = CreateComponent<BaseMerchantProp>(addRenderer: true);
+            merchant.Initialize();
+            player.AddSessionCoins(1000);
+            int coins = player.SessionCoins;
+            var affordable = new TemporaryBuffPurchase("meta-potion", 100, Config.Game.Merchant.PotionBuffId, 3f);
+            Check(merchant.AttemptPurchase(player, affordable));
+            Equal(coins - 100, player.SessionCoins);
+            Equal(1, player.ActiveBuffCount);
+            var unknown = new TemporaryBuffPurchase("meta-unknown", 50, "NoSuchBuff", 3f);
+            Check(!merchant.AttemptPurchase(player, unknown), "An unknown buff must refund.");
+            Equal(coins - 100, player.SessionCoins);
+            Check(!merchant.AttemptPurchase(null, affordable));
+            Check(!merchant.AttemptPurchase(player, null));
+
+            // #34 achievement triggers: the kill ladder fires through the
+            // AchievementManager, event-driven and idempotent.
+            var achievements = CreateComponent<AchievementManager>();
+            var database = ScriptableObject.CreateInstance<LegacyAchievementDatabase>();
+            Invoke(database, "PopulateBasis");
+            achievements.achievementDatabase = database;
+            Invoke(achievements, "Awake");
+            int unlockEvents = 0;
+            var unlockedIds = new List<int>();
+            achievements.OnAchievementUnlocked += definition => { unlockEvents++; unlockedIds.Add(definition.id); };
+
+            Equal(0, achievements.SessionKillCount);
+            achievements.NotifyEnemyKilled(); // Kill #1: "First Blood" (id 0).
+            Equal(1, achievements.SessionKillCount);
+            Check(achievements.IsAchievementUnlocked(0));
+            Check(!achievements.IsAchievementUnlocked(1));
+            for (int kill = 1; kill < 99; kill++) achievements.NotifyEnemyKilled();
+            Equal(99, achievements.SessionKillCount);
+            Check(!achievements.IsAchievementUnlocked(1));
+            achievements.NotifyEnemyKilled(); // Kill #100: "Slayer" (id 1).
+            Check(achievements.IsAchievementUnlocked(1));
+            Equal(2, unlockEvents);
+            Equal(0, unlockedIds[0]);
+            Equal(1, unlockedIds[1]);
+
+            // Kills flow in from DropManager.DropLoot - the Enemy.Die seam (#34).
+            var drop = CreateComponent<DropManager>(invokeAwake: true);
+            var victim = CreateComponent<ProbeEnemy>(addRenderer: true);
+            victim.Initialize();
+            drop.DropLoot(victim);
+            Equal(101, achievements.SessionKillCount);
+
+            // Survival thresholds unlock exactly once, in order, on crossing.
+            achievements.NotifySurvivalTime(599.99f);
+            Check(!achievements.IsAchievementUnlocked(18));
+            achievements.NotifySurvivalTime(600f);
+            Check(achievements.IsAchievementUnlocked(18));
+            Check(!achievements.IsAchievementUnlocked(19));
+            achievements.NotifySurvivalTime(600f); // Re-notification: no double fire.
+            achievements.NotifySurvivalTime(5400f); // A huge jump unlocks the rest.
+            Check(achievements.IsAchievementUnlocked(19));
+            Equal(4, unlockEvents);
+            Equal(18, unlockedIds[2]);
+            Equal(19, unlockedIds[3]);
+
+            // SpawnManager feeds the survival trigger from the central game timer.
+            save.currentSaveData = PlayerMetaSchema.Default();
+            SetField(achievements, "nextSurvivalThresholdIndex", 0);
+            var spawner = CreateComponent<SpawnManager>();
+            Invoke(spawner, "Awake");
+            spawner.playerTransform = player.entityTransform;
+            spawner.enemyPrefabs = Array.Empty<Enemy>();
+            Time.deltaTime = 600f;
+            Invoke(spawner, "Update");
+            Near(600f, spawner.GameTimer, 0f);
+            Check(achievements.IsAchievementUnlocked(18), "SpawnManager must feed the survival trigger.");
+
+            // #24: the id getter falls back to the serialized _id, and
+            // AchievementManager.Awake re-syncs databases for player builds.
+            object boxed = new LegacyAchievementDefinition();
+            SetField(boxed, "_id", 7);
+            SetField(boxed, "_title", "Stale Title");
+            var staleDefinition = (LegacyAchievementDefinition)boxed;
+            Equal(7, staleDefinition.id, "id must fall back to the serialized _id before syncing.");
+            var playerBuildDb = ScriptableObject.CreateInstance<LegacyAchievementDatabase>();
+            playerBuildDb.achievements.Add(staleDefinition);
+            achievements.achievementDatabase = playerBuildDb;
+            Invoke(achievements, "Awake");
+            Equal(7, playerBuildDb.achievements[0].Data.Id, "Awake must re-sync serialized definitions.");
+            Equal(FastMath.FastHash("Stale Title"), playerBuildDb.achievements[0].Data.TitleHash);
+        }
+        finally
+        {
+            TestRuntime.Reset();
+            Directory.Delete(tempRoot, true);
+            FastRandom.SetSeed(Config.Backend.Random.DefaultSeed);
+        }
     }
 }

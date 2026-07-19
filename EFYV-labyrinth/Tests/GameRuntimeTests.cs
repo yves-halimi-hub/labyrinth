@@ -401,11 +401,13 @@ internal static partial class Program
         melee.attackRange = 2f;
         melee.knockbackForce = 10f;
         melee.SetDamage(5f);
-        Time.deltaTime = 0.5f;
+        // Knockback scales by the DRIVING TICK's deltaTime (#24); the global clock
+        // is poisoned to prove Fire no longer reads Time.deltaTime.
+        Time.deltaTime = 99f;
         float oldX = near.entityTransform.position.x;
-        melee.Fire();
+        melee.Tick(0.5f);
         Near(10f, near.CurrentHealth);
-        Check(near.entityTransform.position.x > oldX);
+        Near(oldX + (10f * 0.5f), near.entityTransform.position.x, 0.0001f);
         Near(20f, far.CurrentHealth);
 
         var orbital = CreateComponent<ProbeOrbitalWeapon>(invokeAwake: true);
@@ -415,12 +417,12 @@ internal static partial class Program
         orbital.projectileCount = 0;
         orbital.SetDamage(10f);
         float before = near.CurrentHealth;
-        orbital.Fire();
+        orbital.Tick(0.25f);
         Near(before, near.CurrentHealth);
         orbital.projectileCount = 1;
         near.entityTransform.position = Vector3.zero;
-        Time.deltaTime = 0.25f;
-        orbital.Fire();
+        Time.deltaTime = 99f;
+        orbital.Tick(0.25f);
         Near(before - 2.5f, near.CurrentHealth);
     }
 
@@ -432,7 +434,7 @@ internal static partial class Program
         var prefab = CreateComponent<ProbeEntity>(addRenderer: true);
         prefab.Initialize();
         manager.Prewarm(prefab, 3);
-        int key = prefab.gameObject.GetInstanceID();
+        int key = PoolManager.GetPoolKey(prefab.gameObject);
         var spawned = (ProbeEntity)manager.Spawn(prefab, new Vector3(2, 3, 4), Quaternion.identity);
         Check(spawned != null);
         Check(spawned.IsSpawned);
@@ -464,7 +466,7 @@ internal static partial class Program
 
         var objectPrefab = new GameObject("VfxPrefab");
         manager.PrewarmGameObject(objectPrefab, 2);
-        int objectKey = objectPrefab.GetInstanceID();
+        int objectKey = PoolManager.GetPoolKey(objectPrefab);
         GameObject vfx = manager.SpawnGameObject(objectPrefab, new Vector3(8, 9, 10), Quaternion.identity);
         Check(vfx != null && vfx.activeSelf);
         Near(8f, vfx.transform.position.x);
@@ -489,5 +491,67 @@ internal static partial class Program
         Equal(null, PoolManager.Instance);
         Equal(null, FastPoolRegistry<GameEntity>.Rent(key));
         Equal(null, FastPoolRegistry<GameObject>.Rent(objectKey));
+    }
+
+    // batch2/game-managers agent: #24 Singleton negative caching. A cached miss
+    // must eliminate FindObjectOfType sweeps from hot paths, and the explicit
+    // invalidation contract (registration bumps + SingletonSearchCache.Invalidate)
+    // must restore discovery.
+    private static void TestRuntimeSingletonNegativeCache()
+    {
+        // First miss performs exactly one sweep; every repeat is served from the
+        // negative cache.
+        long sweeps = UnityEngine.Object.FindObjectOfTypeCalls;
+        Check(!AIDirector.TryGetInstance(out _));
+        Equal(sweeps + 1, UnityEngine.Object.FindObjectOfTypeCalls, "The first miss must sweep once.");
+        for (int i = 0; i < 100; i++) Check(!AIDirector.TryGetInstance(out _));
+        Equal(sweeps + 1, UnityEngine.Object.FindObjectOfTypeCalls, "Cached misses must never sweep.");
+
+        // Awake registration publishes the instance without any sweep.
+        var director = CreateComponent<AIDirector>(invokeAwake: true);
+        sweeps = UnityEngine.Object.FindObjectOfTypeCalls;
+        Check(AIDirector.TryGetInstance(out AIDirector found));
+        Same(director, found);
+        Equal(sweeps, UnityEngine.Object.FindObjectOfTypeCalls, "A registered instance needs no sweep.");
+
+        // Destruction: the next lookup sweeps once, misses, and caches again.
+        UnityEngine.Object.Destroy(director.gameObject);
+        sweeps = UnityEngine.Object.FindObjectOfTypeCalls;
+        Check(!AIDirector.TryGetInstance(out _));
+        Check(!AIDirector.TryGetInstance(out _));
+        Equal(sweeps + 1, UnityEngine.Object.FindObjectOfTypeCalls);
+
+        // DESIGNED LIMITATION: a component whose Awake never ran (no registration
+        // bump) stays invisible behind a cached miss until an explicit
+        // invalidation - the escape hatch for Awake-less discovery.
+        var silent = CreateComponent<AIDirector>(invokeAwake: false);
+        Check(!AIDirector.TryGetInstance(out _), "A cached miss is trusted until invalidation.");
+        SingletonSearchCache.Invalidate();
+        Check(AIDirector.TryGetInstance(out AIDirector swept));
+        Same(silent, swept);
+
+        // Rule 1: ANY singleton registration refreshes every type's cache.
+        UnityEngine.Object.Destroy(silent.gameObject);
+        Check(!AIDirector.TryGetInstance(out _)); // Fresh miss cached.
+        var hidden = CreateComponent<AIDirector>(invokeAwake: false);
+        Check(!AIDirector.TryGetInstance(out _));
+        var bumper = CreateComponent<DropManager>(invokeAwake: true); // Different type registers.
+        Check(AIDirector.TryGetInstance(out AIDirector foundViaBump));
+        Same(hidden, foundViaBump);
+        UnityEngine.Object.Destroy(hidden.gameObject);
+        UnityEngine.Object.Destroy(bumper.gameObject);
+
+        // The hot path that motivated the fix: after its first frame, a
+        // SpawnManager with no optional managers runs entirely sweep-free.
+        var spawner = CreateComponent<SpawnManager>();
+        Invoke(spawner, "Awake");
+        spawner.playerTransform = new GameObject("cache-player").transform;
+        spawner.enemyPrefabs = Array.Empty<Enemy>();
+        Time.deltaTime = 0.1f;
+        Invoke(spawner, "Update");
+        sweeps = UnityEngine.Object.FindObjectOfTypeCalls;
+        for (int frame = 0; frame < 200; frame++) Invoke(spawner, "Update");
+        Equal(sweeps, UnityEngine.Object.FindObjectOfTypeCalls,
+            "200 spawner frames must not trigger a single FindObjectOfType sweep (#24).");
     }
 }

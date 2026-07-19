@@ -5,6 +5,17 @@
 `Core` contains all production code in this repository. It is independent of
 Unity APIs and can be compiled into the editor, game, or a plain .NET process.
 
+`Core` also doubles as a local Unity (UPM) package consumed by the game
+project: [`package.json`](package.json) names it `com.efyv.labybackend` and
+[`EFYVBackend.Core.asmdef`](EFYVBackend.Core.asmdef) compiles everything here
+into the engine-neutral `EFYVBackend.Core` assembly (unsafe allowed, no engine
+references). [`csc.rsp`](csc.rsp) raises this assembly to C# 10 inside Unity
+(the parameterless `HitboxData` constructor requires it; Unity defaults to
+C# 9). The package root is `Core` — not the repository root — so the sibling
+`Tests` directory and its `bin`/`obj` output are never imported by Unity. The
+`*.meta` files alongside sources carry the stable GUIDs Unity needs; keep them
+when moving or renaming files.
+
 ## Areas
 
 - [Collections](Collections/README.md): bounded pools, swap removal, flat maps,

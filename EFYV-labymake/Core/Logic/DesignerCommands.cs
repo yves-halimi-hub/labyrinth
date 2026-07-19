@@ -11,6 +11,7 @@ namespace EFYVLabyMake.Core.Logic
     {
         internal sealed class LayerState
         {
+            public Layer Target;
             public int Index;
             public string Name;
             public bool IsVisible;
@@ -21,34 +22,65 @@ namespace EFYVLabyMake.Core.Logic
         public int FrameIndex { get; }
         public List<LayerState> Layers { get; }
         public Dictionary<string, HitboxData> Hitboxes { get; }
+        // Item #6: deep-copied attachment list, captured only for tools that
+        // can mutate attachments (the stamp tool) - the same opt-in contract
+        // hitboxes have with the hitbox tool. Null means "not captured".
+        public List<SubElementAttachment> Attachments { get; }
+
+        private readonly List<Layer> layerMembership;
 
         private FrameEditCapture(
             int frameIndex,
             List<LayerState> layers,
-            Dictionary<string, HitboxData> hitboxes)
+            Dictionary<string, HitboxData> hitboxes,
+            List<SubElementAttachment> attachments,
+            List<Layer> layerMembership)
         {
             FrameIndex = frameIndex;
             Layers = layers;
             Hitboxes = hitboxes;
+            Attachments = attachments;
+            this.layerMembership = layerMembership;
         }
 
         public static FrameEditCapture Capture(Frame frame, ITool tool)
         {
             if (frame == null) throw new ArgumentNullException(nameof(frame));
             if (tool == null) throw new ArgumentNullException(nameof(tool));
-
-            var layers = new List<LayerState>();
             var layerTool = tool as ILayerTool;
-            if (layerTool != null && layerTool.ActiveLayerIndex >= Config.Common.FirstIndex &&
-                layerTool.ActiveLayerIndex < frame.Layers.Count)
+            return CaptureCore(
+                frame,
+                layerTool != null ? layerTool.ActiveLayerIndex : Config.Common.NotFoundIndex,
+                tool is HitboxTool,
+                tool is StampTool);
+        }
+
+        // Captures one layer by index without a tool: the floating-selection
+        // lift/paste path uses this so its whole lift-move-anchor interaction
+        // can commit as ONE sparse FrameEditCommand against this capture.
+        internal static FrameEditCapture CaptureLayer(Frame frame, int layerIndex)
+        {
+            if (frame == null) throw new ArgumentNullException(nameof(frame));
+            return CaptureCore(frame, layerIndex, false, false);
+        }
+
+        private static FrameEditCapture CaptureCore(
+            Frame frame,
+            int layerIndex,
+            bool captureHitboxes,
+            bool captureAttachments)
+        {
+            var layers = new List<LayerState>();
+            if (layerIndex >= Config.Common.FirstIndex && layerIndex < frame.Layers.Count)
             {
-                Layer layer = frame.Layers[layerTool.ActiveLayerIndex];
+                Layer layer = frame.Layers[layerIndex];
                 var pixels = new uint[layer.Pixels.Length];
                 for (int index = Config.Common.FirstIndex; index < pixels.Length; index++)
                     pixels[index] = layer.Pixels[index].Rgba;
                 layers.Add(new LayerState
                 {
-                    Index = layerTool.ActiveLayerIndex,
+                    Target = layer,
+                    Index = layerIndex,
                     Name = layer.Name,
                     IsVisible = layer.IsVisible,
                     Opacity = layer.Opacity,
@@ -57,9 +89,65 @@ namespace EFYVLabyMake.Core.Logic
             }
 
             Dictionary<string, HitboxData> hitboxes = null;
-            if (tool is HitboxTool)
+            if (captureHitboxes)
                 hitboxes = new Dictionary<string, HitboxData>(frame.Hitboxes, StringComparer.Ordinal);
-            return new FrameEditCapture(frame.FrameIndex, layers, hitboxes);
+            List<SubElementAttachment> attachments = null;
+            if (captureAttachments) attachments = CloneAttachments(frame.Attachments);
+            return new FrameEditCapture(
+                frame.FrameIndex,
+                layers,
+                hitboxes,
+                attachments,
+                new List<Layer>(frame.Layers));
+        }
+
+        internal static List<SubElementAttachment> CloneAttachments(
+            List<SubElementAttachment> source)
+        {
+            var clones = new List<SubElementAttachment>(source.Count);
+            foreach (SubElementAttachment attachment in source)
+                clones.Add(attachment?.Clone());
+            return clones;
+        }
+
+        // Gesture rollback: restores the captured state directly instead of diffing,
+        // so it cannot fault on a frame a tool structurally mutated mid-gesture. The
+        // membership snapshot holds layer REFERENCES, which puts added/removed/
+        // reordered layers back exactly as captured; the captured active layer gets
+        // its pixels and metadata rewritten in place.
+        public void Restore(Frame frame)
+        {
+            if (frame == null) throw new ArgumentNullException(nameof(frame));
+
+            frame.FrameIndex = FrameIndex;
+            frame.Layers.Clear();
+            frame.Layers.AddRange(layerMembership);
+
+            foreach (LayerState state in Layers)
+            {
+                Layer layer = state.Target;
+                layer.Name = state.Name;
+                layer.IsVisible = state.IsVisible;
+                layer.Opacity = state.Opacity;
+                int pixelCount = Math.Min(state.Pixels.Length, layer.Pixels.Length);
+                for (int index = Config.Common.FirstIndex; index < pixelCount; index++)
+                    layer.Pixels[index].Rgba = state.Pixels[index];
+            }
+
+            if (Hitboxes != null)
+            {
+                frame.Hitboxes.Clear();
+                foreach (KeyValuePair<string, HitboxData> pair in Hitboxes)
+                    frame.Hitboxes[pair.Key] = pair.Value;
+            }
+
+            if (Attachments != null)
+            {
+                // Restore DEEP COPIES so repeated restores (or later live
+                // mutations) can never corrupt the capture itself.
+                frame.Attachments.Clear();
+                frame.Attachments.AddRange(CloneAttachments(Attachments));
+            }
         }
     }
 
@@ -125,6 +213,12 @@ namespace EFYVLabyMake.Core.Logic
         private readonly Frame target;
         private readonly List<LayerDiff> layerDiffs = new List<LayerDiff>();
         private readonly List<HitboxDiff> hitboxDiffs = new List<HitboxDiff>();
+        // Item #6 attachment diff: attachments are tiny records, so a changed
+        // list is stored as full before/after deep copies instead of a sparse
+        // per-field diff. Null when the capture skipped attachments or the
+        // list is unchanged.
+        private readonly List<SubElementAttachment> attachmentsBefore;
+        private readonly List<SubElementAttachment> attachmentsAfter;
         private readonly int beforeFrameIndex;
         private readonly int afterFrameIndex;
 
@@ -142,9 +236,16 @@ namespace EFYVLabyMake.Core.Logic
 
             foreach (var beforeLayer in before.Layers)
             {
+                // Structural-mutation contract: the diff is only valid while the
+                // captured layer still occupies its captured slot with an unchanged
+                // buffer size. A tool that removed, reordered, or resized it makes
+                // this constructor throw InvalidOperationException; the session then
+                // rolls the gesture back from the capture and rethrows this single
+                // exception.
                 if (beforeLayer.Index < Config.Common.FirstIndex || beforeLayer.Index >= target.Layers.Count)
                     throw new InvalidOperationException();
                 Layer afterLayer = target.Layers[beforeLayer.Index];
+                if (!ReferenceEquals(afterLayer, beforeLayer.Target)) throw new InvalidOperationException();
                 if (beforeLayer.Pixels.Length != afterLayer.Pixels.Length) throw new InvalidOperationException();
 
                 var indices = new List<int>();
@@ -205,9 +306,21 @@ namespace EFYVLabyMake.Core.Logic
                 }
             }
 
+            if (before.Attachments != null &&
+                !AreAttachmentListsEqual(before.Attachments, target.Attachments))
+            {
+                attachmentsBefore = FrameEditCapture.CloneAttachments(before.Attachments);
+                attachmentsAfter = FrameEditCapture.CloneAttachments(target.Attachments);
+                foreach (SubElementAttachment attachment in attachmentsBefore)
+                    estimatedBytes += EstimateAttachmentBytes(attachment);
+                foreach (SubElementAttachment attachment in attachmentsAfter)
+                    estimatedBytes += EstimateAttachmentBytes(attachment);
+            }
+
             HasChanges = beforeFrameIndex != afterFrameIndex ||
                 layerDiffs.Count > Config.Common.EmptyCount ||
-                hitboxDiffs.Count > Config.Common.EmptyCount;
+                hitboxDiffs.Count > Config.Common.EmptyCount ||
+                attachmentsBefore != null;
             EstimatedBytes = estimatedBytes;
         }
 
@@ -242,12 +355,166 @@ namespace EFYVLabyMake.Core.Logic
                 else
                     target.Hitboxes.Remove(hitboxDiff.Key);
             }
+
+            if (attachmentsBefore != null)
+            {
+                target.Attachments.Clear();
+                target.Attachments.AddRange(FrameEditCapture.CloneAttachments(
+                    forward ? attachmentsAfter : attachmentsBefore));
+            }
         }
 
         private static bool AreEqual(HitboxData left, HitboxData right)
         {
             return left.X == right.X && left.Y == right.Y &&
                 left.Width == right.Width && left.Height == right.Height;
+        }
+
+        private static bool AreAttachmentListsEqual(
+            List<SubElementAttachment> left,
+            List<SubElementAttachment> right)
+        {
+            if (left.Count != right.Count) return false;
+            for (int index = Config.Common.FirstIndex; index < left.Count; index++)
+            {
+                SubElementAttachment before = left[index];
+                SubElementAttachment after = right[index];
+                if (before == null || after == null)
+                {
+                    if (!ReferenceEquals(before, after)) return false;
+                    continue;
+                }
+                if (!string.Equals(before.SubElementName, after.SubElementName, StringComparison.Ordinal) ||
+                    before.X != after.X || before.Y != after.Y ||
+                    before.ZOrder != after.ZOrder ||
+                    before.FlipX != after.FlipX || before.FlipY != after.FlipY)
+                    return false;
+            }
+            return true;
+        }
+
+        private static long EstimateAttachmentBytes(SubElementAttachment attachment)
+        {
+            return Config.Command.EstimatedCommandOverheadBytes +
+                ((long)(attachment?.SubElementName.Length ?? Config.Common.EmptyCount) * sizeof(char));
+        }
+    }
+
+    // Item #8 global color swap: replaces every pixel that is exactly fromRgba
+    // with toRgba across the captured layers. The command stores only the
+    // affected pixel INDICES (sparse): every one of those pixels held fromRgba
+    // before Execute and toRgba after, so undo/redo rewrite the two known
+    // values without before/after arrays. One instance covers the whole swap
+    // scope (a frame or all frames) as ONE history entry.
+    internal sealed class ColorSwapCommand : ISizedCommand
+    {
+        internal sealed class LayerSwap
+        {
+            public Layer Target { get; }
+            public int[] PixelIndices { get; }
+
+            public LayerSwap(Layer target, int[] pixelIndices)
+            {
+                Target = target;
+                PixelIndices = pixelIndices;
+            }
+        }
+
+        private readonly List<LayerSwap> swaps;
+        private readonly uint fromRgba;
+        private readonly uint toRgba;
+
+        public long EstimatedBytes { get; }
+
+        public ColorSwapCommand(List<LayerSwap> swaps, uint fromRgba, uint toRgba)
+        {
+            this.swaps = swaps ?? throw new ArgumentNullException(nameof(swaps));
+            this.fromRgba = fromRgba;
+            this.toRgba = toRgba;
+
+            long estimatedBytes = Config.Command.EstimatedCommandOverheadBytes;
+            foreach (LayerSwap swap in swaps)
+                estimatedBytes += (long)swap.PixelIndices.Length * sizeof(int);
+            EstimatedBytes = estimatedBytes;
+        }
+
+        public void Execute() => Apply(toRgba);
+        public void Undo() => Apply(fromRgba);
+
+        private void Apply(uint value)
+        {
+            foreach (LayerSwap swap in swaps)
+            {
+                Layer layer = swap.Target;
+                for (int index = Config.Common.FirstIndex; index < swap.PixelIndices.Length; index++)
+                    layer.Pixels[swap.PixelIndices[index]].Rgba = value;
+            }
+        }
+    }
+
+    // Item #5 map editing: ONE history entry covering a map mutation - a
+    // sparse cell diff (indices into FastGridMap.RawData with before/after
+    // ids) plus the prop records the operation APPENDED. Every current map
+    // operation only ever appends props, so undo removes exactly the appended
+    // instances from the tail (reverse order keeps the swap-list stable) and
+    // redo re-adds the same instances (Remove reset their tracking indices).
+    internal sealed class MapEditCommand : ISizedCommand
+    {
+        private readonly EFYVBackend.Core.Collections.FastGridMap target;
+        private readonly int[] cellIndices;
+        private readonly short[] beforeTiles;
+        private readonly short[] afterTiles;
+        private readonly EFYVBackend.Core.Collections.FastGridMap.MapPropData[] appendedProps;
+
+        public bool HasChanges =>
+            cellIndices.Length > Config.Command.EmptyStackCount ||
+            appendedProps.Length > Config.Command.EmptyStackCount;
+        public long EstimatedBytes { get; }
+
+        public MapEditCommand(
+            EFYVBackend.Core.Collections.FastGridMap target,
+            int[] cellIndices,
+            short[] beforeTiles,
+            short[] afterTiles,
+            EFYVBackend.Core.Collections.FastGridMap.MapPropData[] appendedProps)
+        {
+            this.target = target ?? throw new ArgumentNullException(nameof(target));
+            this.cellIndices = cellIndices ?? throw new ArgumentNullException(nameof(cellIndices));
+            this.beforeTiles = beforeTiles ?? throw new ArgumentNullException(nameof(beforeTiles));
+            this.afterTiles = afterTiles ?? throw new ArgumentNullException(nameof(afterTiles));
+            this.appendedProps = appendedProps ??
+                Array.Empty<EFYVBackend.Core.Collections.FastGridMap.MapPropData>();
+            if (beforeTiles.Length != cellIndices.Length || afterTiles.Length != cellIndices.Length)
+                throw new ArgumentException(nameof(beforeTiles));
+
+            long estimatedBytes = Config.Command.EstimatedCommandOverheadBytes +
+                (long)cellIndices.Length * (sizeof(int) + sizeof(short) + sizeof(short));
+            foreach (EFYVBackend.Core.Collections.FastGridMap.MapPropData prop in this.appendedProps)
+            {
+                estimatedBytes += Config.Command.EstimatedCommandOverheadBytes +
+                    ((long)(prop.AssetKey?.Length ?? Config.Common.EmptyCount) * sizeof(char));
+            }
+            EstimatedBytes = estimatedBytes;
+        }
+
+        public void Execute()
+        {
+            short[] tiles = target.RawData;
+            for (int index = Config.Common.FirstIndex; index < cellIndices.Length; index++)
+                tiles[cellIndices[index]] = afterTiles[index];
+            foreach (EFYVBackend.Core.Collections.FastGridMap.MapPropData prop in appendedProps)
+                target.Props.Add(prop);
+        }
+
+        public void Undo()
+        {
+            for (int index = appendedProps.Length - Config.Common.UnitCount;
+                index >= Config.Common.FirstIndex;
+                index--)
+                target.Props.Remove(appendedProps[index]);
+            short[] tiles = target.RawData;
+            for (int index = Config.Common.FirstIndex; index < cellIndices.Length; index++)
+                tiles[cellIndices[index]] = beforeTiles[index];
         }
     }
 

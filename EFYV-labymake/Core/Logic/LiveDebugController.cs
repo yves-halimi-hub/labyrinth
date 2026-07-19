@@ -69,6 +69,13 @@ namespace EFYVLabyMake.Core.Logic
         private bool isDisposed;
         private DateTimeOffset? lastSyncedAt;
         private LiveDebugSnapshot current;
+        // Item #27: the union of the edit scopes reported since the last
+        // successful publish. When it changed no exported pixels or atlas
+        // layout, the next publish takes the metadata-only fast path (no PNG
+        // re-encode). Accumulated across superseded debounce requests so a
+        // pixel edit followed by a hitbox nudge inside one debounce window still
+        // republishes the PNG. Untagged notifications contribute Everything.
+        private DesignerDirtyScope pendingScope = DesignerDirtyScope.None;
 
         public event Action<LiveDebugSnapshot> StateChanged;
 
@@ -144,11 +151,23 @@ namespace EFYVLabyMake.Core.Logic
 
         public long NotifyProjectChanged(Func<EFYVProject> projectAccessor)
         {
+            // Untagged notifications keep the full-publish behavior (item #27):
+            // the metadata-only fast path can only ever be reached via a scope
+            // that a caller deliberately narrowed.
+            return NotifyProjectChanged(projectAccessor, DesignerDirtyScope.Everything);
+        }
+
+        // Item #27: the scope is the union of what changed since the caller last
+        // notified. It accumulates here across debounced/superseded requests
+        // until a publish succeeds.
+        public long NotifyProjectChanged(Func<EFYVProject> projectAccessor, DesignerDirtyScope scope)
+        {
             ThrowIfDisposed();
             if (projectAccessor == null) throw new ArgumentNullException(nameof(projectAccessor));
             lock (gate)
             {
                 if (!isWatching) return requestId;
+                pendingScope |= scope;
             }
             return Schedule(projectAccessor, debounceDelay);
         }
@@ -157,6 +176,8 @@ namespace EFYVLabyMake.Core.Logic
         {
             ThrowIfDisposed();
             if (project == null) throw new ArgumentNullException(nameof(project));
+            // An explicit "export now" always writes a full publish.
+            lock (gate) pendingScope |= DesignerDirtyScope.Everything;
             Schedule(() => project, TimeSpan.Zero);
             lock (gate) return pendingTask;
         }
@@ -240,12 +261,38 @@ namespace EFYVLabyMake.Core.Logic
                 }
 
                 Transition(scheduledRequest, LiveDebugState.Exporting, capture.Validation, null, null);
+                // Item #27: capture the accumulated scope as late as possible
+                // (a newer notification arriving after this supersedes the
+                // request, so it never reaches Succeeded with a stale scope) and
+                // take the metadata-only publish path when no exported pixels or
+                // atlas layout changed.
+                DesignerDirtyScope capturedScope;
+                lock (gate) capturedScope = pendingScope;
+                bool metadataOnly = capturedScope.IsMetadataOnly();
+                // Item #33: a directional capture carries one snapshot per
+                // facing (active facing last); the reported result is the
+                // final - active - facing's publish.
                 ExportResult result = await Task.Run(
-                    () => exportEngine.Export(capture.Snapshot, cancellationToken),
+                    () =>
+                    {
+                        ExportResult lastResult = null;
+                        foreach (ProjectSnapshot snapshot in capture.Snapshots)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            lastResult = exportEngine.Export(snapshot, cancellationToken, metadataOnly);
+                        }
+                        return lastResult;
+                    },
                     cancellationToken).ConfigureAwait(false);
 
                 if (!IsCurrentRequest(scheduledRequest)) return;
-                lock (gate) lastSyncedAt = scheduler.UtcNow;
+                // Clear only the bits this publish covered; anything reported
+                // after the capture above belongs to the next batch.
+                lock (gate)
+                {
+                    lastSyncedAt = scheduler.UtcNow;
+                    pendingScope &= ~capturedScope;
+                }
                 Transition(scheduledRequest, LiveDebugState.Succeeded, capture.Validation, result, null);
             }
             catch (OperationCanceledException)
@@ -291,18 +338,38 @@ namespace EFYVLabyMake.Core.Logic
             ProjectValidationResult validation = validator.Validate(project, ProjectValidationScope.Export);
             return new LiveDebugCapture(
                 validation,
-                validation.IsValid ? ProjectSnapshot.Capture(project) : null);
+                validation.IsValid ? CaptureSnapshots(project) : null);
+        }
+
+        // One snapshot for a plain project; one per facing (inactive facings
+        // in catalog order, the ACTIVE facing last) for a directional project,
+        // so a single live push refreshes all four suffixed pairs (item #33).
+        private static ProjectSnapshot[] CaptureSnapshots(EFYVProject project)
+        {
+            if (project.Directional == null)
+                return new[] { ProjectSnapshot.Capture(project) };
+
+            var snapshots = new ProjectSnapshot[Config.Entity.DirectionalVariantCount];
+            int index = Config.Common.FirstIndex;
+            string activeFacing = project.Directional.ActiveFacing;
+            foreach (string facing in Config.Schema.FacingChoices)
+            {
+                if (string.Equals(facing, activeFacing, StringComparison.Ordinal)) continue;
+                snapshots[index++] = ProjectSnapshot.CaptureFacing(project, facing);
+            }
+            snapshots[index] = ProjectSnapshot.CaptureFacing(project, activeFacing);
+            return snapshots;
         }
 
         private sealed class LiveDebugCapture
         {
             public ProjectValidationResult Validation { get; }
-            public ProjectSnapshot Snapshot { get; }
+            public ProjectSnapshot[] Snapshots { get; }
 
-            public LiveDebugCapture(ProjectValidationResult validation, ProjectSnapshot snapshot)
+            public LiveDebugCapture(ProjectValidationResult validation, ProjectSnapshot[] snapshots)
             {
                 Validation = validation;
-                Snapshot = snapshot;
+                Snapshots = snapshots;
             }
         }
 

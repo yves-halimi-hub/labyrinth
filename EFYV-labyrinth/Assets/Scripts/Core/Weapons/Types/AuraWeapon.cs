@@ -26,7 +26,9 @@ namespace EFYV.Core.Weapons.Types
             // Temporary simple implementation: just damage everything close
             // A fully optimized version uses grid.GetEntitiesInRadius()
             float sqrRadius = radius * radius;
-            Enemy.ApplyDamageInRadius(transform.position, sqrRadius, BaseDamage);
+            // Faction-aware: player auras sweep the packed enemy list, enemy-held
+            // auras test only the player singleton.
+            DamageTargetsInRadius(transform.position, sqrRadius, BaseDamage);
         }
     }
 }

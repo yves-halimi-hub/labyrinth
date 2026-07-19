@@ -2,6 +2,7 @@ import json
 import os
 import re
 import struct
+import uuid
 import zlib
 
 
@@ -26,7 +27,16 @@ def _png_chunk(chunk_type, payload):
 
 
 def _write_solid_rgba_png(path, width, height, rgba):
-    row = b"\x00" + bytes(rgba) * width
+    # Mirror FastPngEncoder.Write: non-positive dimensions and non-RGBA pixel
+    # layouts are rejected before anything touches the filesystem.
+    if width <= 0:
+        raise ValueError("width must be positive")
+    if height <= 0:
+        raise ValueError("height must be positive")
+    pixel = bytes(rgba)
+    if len(pixel) != 4:
+        raise ValueError("rgba must have exactly 4 components")
+    row = b"\x00" + pixel * width
     image_data = row * height
     header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
     png = (
@@ -35,7 +45,8 @@ def _write_solid_rgba_png(path, width, height, rgba):
         + _png_chunk(b"IDAT", zlib.compress(image_data))
         + _png_chunk(b"IEND", b"")
     )
-    with open(path, "wb") as output:
+    # Exclusive create, mirroring the backend's FileMode.CreateNew.
+    with open(path, "xb") as output:
         output.write(png)
 
 def mock_pixel_app_export(export_directory, entity_name):
@@ -48,16 +59,29 @@ def mock_pixel_app_export(export_directory, entity_name):
     facing = "Down"
     export_basename = f"{entity_name}_{facing}"
 
-    # Publish the image first; metadata is the authoritative completion signal.
+    # Mirror the backend FastExporter temp-name convention:
+    # "." + stem + "." + <guid N> + <final extension> + ".tmp", created
+    # exclusively so concurrent exports cannot corrupt each other's file,
+    # published via os.replace, and removed if a failure leaves them behind.
+    temporary_stem = f".{export_basename}.{uuid.uuid4().hex}"
     png_path = os.path.join(export_directory, f"{export_basename}.png")
-    png_temp_path = png_path + ".tmp"
-    _write_solid_rgba_png(png_temp_path, 64, 64, (255, 0, 0, 255))
-    os.replace(png_temp_path, png_path)
-    print(f"Created Sprite: {png_path}")
+    png_temp_path = os.path.join(export_directory, f"{temporary_stem}.png.tmp")
 
-    # Match the versioned backend/Unity live-hook contract.
+    # Match the versioned backend/Unity live-hook contract. Key order mirrors
+    # FastExporter.WriteJson: documentVersion, assetType, baseAssetType,
+    # properties, hitboxes, atlas. documentVersion tracks the backend's
+    # CurrentDocumentVersion; baseAssetType is the registered base of the
+    # asset type (EnemyData is a base archetype, so it names itself), letting
+    # the importer fall back for custom types it has no class for.
+    # Item #5 note: the mock does NOT mirror the .efyvmap binary container
+    # or the optional "tileset" manifest block - the cross-language contract
+    # guard pins only the .efyvlaby JSON identity this mock emits (see the
+    # test_config_contract.py scope note). documentVersion 5 == the backend's
+    # CurrentDocumentVersion after the tileset block landed.
     efyv_data = {
+        "documentVersion": 5,
         "assetType": "EnemyData",
+        "baseAssetType": "EnemyData",
         "properties": {
             "entityName": entity_name,
             "maxHealth": 25.0,
@@ -89,11 +113,24 @@ def mock_pixel_app_export(export_directory, entity_name):
     }
 
     efyv_path = os.path.join(export_directory, f"{export_basename}.efyvlaby")
-    efyv_temp_path = efyv_path + ".tmp"
-    with open(efyv_temp_path, "w", encoding="utf-8") as f:
-        json.dump(efyv_data, f, indent=4)
-    os.replace(efyv_temp_path, efyv_path)
-        
+    efyv_temp_path = os.path.join(export_directory, f"{temporary_stem}.efyvlaby.tmp")
+    try:
+        # Publish the image first; metadata is the authoritative completion signal.
+        _write_solid_rgba_png(png_temp_path, 64, 64, (255, 0, 0, 255))
+        os.replace(png_temp_path, png_path)
+        print(f"Created Sprite: {png_path}")
+
+        with open(efyv_temp_path, "x", encoding="utf-8") as f:
+            json.dump(efyv_data, f, indent=4)
+        os.replace(efyv_temp_path, efyv_path)
+    finally:
+        # Mirror the backend's DeleteIfPresent cleanup.
+        for leftover in (png_temp_path, efyv_temp_path):
+            try:
+                os.remove(leftover)
+            except OSError:
+                pass
+
     print(f"Created Metadata: {efyv_path}")
     print("\nExport complete!")
     print("If Unity is open, the EFYVPixelArtImporter will immediately detect these files")

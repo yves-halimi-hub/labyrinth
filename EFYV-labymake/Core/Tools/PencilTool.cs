@@ -19,6 +19,7 @@ namespace EFYVLabyMake.Core.Tools
             }
         }
         public EFYVBackend.Core.Math.Algorithms.BrushShape BrushShape { get; set; }
+        public SymmetryMode Symmetry { get; set; }
 
         private int lastX 
         { 
@@ -71,57 +72,28 @@ namespace EFYVLabyMake.Core.Tools
             lastY = Config.Tool.InvalidCoordinate;
         }
 
-        private unsafe void DrawLineBresenham(Frame frame, int x0, int y0, int x1, int y1)
+        private void DrawLineBresenham(Frame frame, int x0, int y0, int x1, int y1)
         {
             Layer targetLayer;
             if (!TryGetLayer(frame, ActiveLayerIndex, out targetLayer)) return;
-            int effectiveBrushSize = EFYVBackend.Core.Math.FastMath.FastMin(
-                BrushSize,
-                EFYVBackend.Core.Math.FastMath.FastMax(targetLayer.Width, targetLayer.Height));
 
-            // Pin the memory ONCE for the entire line drawing operation
-            fixed (PixelColor* ptr = targetLayer.Pixels)
-            {
-                // MIGRATION: Handed the heavy pointer-math and algorithmic tracing to the Backend Engine.
-                if (effectiveBrushSize <= Config.Tool.Pencil.MinThickBrushSize)
-                {
-                    EFYVBackend.Core.Math.Algorithms.DrawLineBresenham(
-                        (uint*)ptr, 
-                        targetLayer.Width, 
-                        targetLayer.Height, 
-                        x0, y0, x1, y1, 
-                        CurrentColor.Rgba
-                    );
-                }
-                else
-                {
-                    EFYVBackend.Core.Math.Algorithms.DrawThickLineBresenham(
-                        (uint*)ptr, 
-                        targetLayer.Width, 
-                        targetLayer.Height, 
-                        x0, y0, x1, y1, 
-                        CurrentColor.Rgba,
-                        effectiveBrushSize,
-                        BrushShape
-                    );
-                }
-            }
+            // MIGRATION: Handed the heavy pointer-math and algorithmic tracing to
+            // the Backend Engine; the shared StrokeRenderer keeps the exact
+            // thin/thick dispatch and applies the mirror variants.
+            StrokeRenderer.DrawSegment(
+                targetLayer,
+                Symmetry,
+                x0, y0, x1, y1,
+                CurrentColor.Rgba,
+                BrushSize,
+                BrushShape);
         }
 
         private void DrawPixel(Frame frame, int x, int y)
         {
-            Layer targetLayer;
-            if (!TryGetLayer(frame, ActiveLayerIndex, out targetLayer)) return;
-            
-            if (BrushSize <= Config.Tool.Pencil.MinThickBrushSize)
-            {
-                targetLayer.SetPixel(x, y, CurrentColor);
-            }
-            else
-            {
-                // Route a single tap through the thick line algorithm using a 0-distance line
-                DrawLineBresenham(frame, x, y, x, y);
-            }
+            // A single tap is a 0-distance line: the renderer degrades a 1-pixel
+            // effective brush to the thin single-pixel write.
+            DrawLineBresenham(frame, x, y, x, y);
         }
     }
 }

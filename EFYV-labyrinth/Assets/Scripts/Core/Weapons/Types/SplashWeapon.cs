@@ -34,6 +34,11 @@ namespace EFYV.Core.Weapons.Types
             splashRadius = GameConfig.Weapons.Splash.DefaultSplashRadius;
             damageRadius = GameConfig.Weapons.Splash.DefaultDamageRadius;
             splashCount = GameConfig.Weapons.Splash.DefaultCount;
+
+            // #32: fill the VFX pool up-front so the first burst never hitches
+            // on Instantiate. No-op without a prefab or PoolManager;
+            // populate-up-to-target keeps repeated grants idempotent.
+            Managers.PoolManager.TryPrewarmGameObject(splashVisualPrefab, GameConfig.Pool.WeaponVfxPrewarmCount);
         }
 
         public override void Fire()
@@ -51,11 +56,12 @@ namespace EFYV.Core.Weapons.Types
                     GameObject vfx = Managers.PoolManager.Instance.SpawnGameObject(splashVisualPrefab, splashPoint, Quaternion.identity);
                     if (vfx != null)
                     {
-                        Managers.PoolManager.Instance.DespawnGameObject(vfx, splashVisualPrefab.GetInstanceID(), GameConfig.Weapons.Splash.VfxLifetime);
+                        Managers.PoolManager.Instance.DespawnGameObject(vfx, Managers.PoolManager.GetPoolKey(splashVisualPrefab), GameConfig.Weapons.Splash.VfxLifetime);
                     }
                 }
                 
-                Enemy.ApplyDamageInRadius(splashPoint, sqrRadius, BaseDamage);
+                // Faction-aware radius damage around each splash point.
+                DamageTargetsInRadius(splashPoint, sqrRadius, BaseDamage);
             }
         }
     }

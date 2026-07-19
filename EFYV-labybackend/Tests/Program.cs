@@ -46,6 +46,78 @@ namespace EFYVBackend.Verification
                 ,("importer and save adversarial files", TestImporterAndSaveAdversarial)
                 ,("export validation, atomicity, and atlas guards", TestExportAdversarial)
                 ,("physics reference calculations", TestPhysicsReference)
+                // CollectionsMemoryDeepTests.cs
+                ,("pool lifo identity and factory fault model", TestCollectionsMemoryPoolLifoModel)
+                ,("pool registry contracts and type isolation", TestCollectionsMemoryPoolRegistryContracts)
+                ,("swap-list cross-list and tampered index adversarial", TestCollectionsMemorySwapListAdversarial)
+                ,("grid map extreme coordinates and bounds conventions", TestCollectionsMemoryGridExtremes)
+                ,("ring buffer degenerate sizes and periodicity", TestCollectionsMemoryRingBufferDegenerate)
+                ,("exact blend and layer threshold models", TestCollectionsMemoryBlendExactModel)
+                ,("blur overload equivalence and blit extremes", TestCollectionsMemoryEffectsAndBlitExtremes)
+                // MathPhysicsDeepTests.cs
+                ,("math float edges and facing corners", TestMathPhysicsFloatEdgeContracts)
+                ,("normalize inverse sqrt bit-exact reference", TestMathPhysicsNormalizeBitExact)
+                ,("random range exact replay and overflow spans", TestMathPhysicsRandomExactReplay)
+                ,("flood fill guards, no-ops, and stack growth", TestMathPhysicsFloodFillAdversarial)
+                ,("thick brush degenerate and far-clipped lines", TestMathPhysicsThickLineDegenerate)
+                ,("walk frame taylor reference sweep", TestMathPhysicsWalkFrameSweep)
+                ,("jitter frame full reference model", TestMathPhysicsJitterReference)
+                ,("cellular third-value and threshold extremes", TestMathPhysicsCellularEdges)
+                ,("translation special-value propagation", TestMathPhysicsTranslationSpecials)
+                // ExportIoDeepTests.cs
+                ,("export-io png byte-level reference encoder", TestExportIoPngReferenceBytes)
+                ,("export-io png generic pixels and streams", TestExportIoPngGenericPixelsAndStreams)
+                ,("export-io exporter naming and culture", TestExportIoExporterNaming)
+                ,("export-io exporter json fidelity", TestExportIoExporterJsonFidelity)
+                ,("export-io importer edge documents", TestExportIoImporterEdgeDocuments)
+                ,("export-io save format byte layout", TestExportIoSaveFormatLayout)
+                ,("export-io save sharing and error paths", TestExportIoSaveSharingAndErrors)
+                ,("export-io safe path policy reference model", TestExportIoSafePathPolicyModel)
+                ,("export-io atlas packing generic element sizes", TestExportIoAtlasPackGenericSizes)
+                // DataModelsDeepTests.cs
+                ,("schema block bit-exact reference model", TestDataModelsSchemaBlockReferenceModel)
+                ,("schema block and save struct byte layout", TestDataModelsSchemaBlockByteLayout)
+                ,("model wrapper schema slot mapping", TestDataModelsModelSlotMapping)
+                ,("model bool, string-hash, and edge semantics", TestDataModelsBoolStringAndEdgeSemantics)
+                ,("shared json data contracts", TestDataModelsJsonContracts)
+                ,("config cross-constant invariants", TestDataModelsConfigInvariants)
+                // batch1/backend-core: grid bulk ops, registry locking, instance PRNG, generators
+                ,("grid map bulk editing primitives", TestCollectionsMemoryGridBulkOps)
+                ,("pool registry locking and first-registration-wins", TestCollectionsMemoryPoolRegistryLocking)
+                ,("instance random state and unbiased range", TestMathPhysicsInstanceRandomState)
+                ,("procedural maze, rooms, and border rules", TestMathPhysicsProceduralGenerators)
+                // b1-backend-png agent additions (ExportIoDeepTests.cs)
+                ,("export-io png decoder round trip", TestExportIoPngDecoderRoundTrip)
+                ,("export-io png decoder adversarial files", TestExportIoPngDecoderAdversarial)
+                ,("export-io atlas layout and frame extraction", TestExportIoAtlasLayoutHelpers)
+                // b2-pipeline-contract agent additions (ExportIoDeepTests.cs)
+                ,("export-io shared atlas metadata validator", TestExportIoSharedAtlasValidator)
+                ,("export-io tri-state efyv parse contract", TestExportIoTryParseContract)
+                ,("export-io bounded publish retry contract", TestExportIoIoRetryContract)
+                ,("export-io shared crc32 reference model", TestExportIoCrc32Reference)
+                ,("export-io document version and base asset type", TestExportIoDocumentVersionAndBaseAssetType)
+                // batch3/pixel-tools agent additions (MathMemoryTests.cs): item #9
+                ,("rectangle and ellipse shape rasterizer models", TestShapeRasterizerReferenceModels)
+                // batch3.3 item #10 (AnimationTimingDeepTests.cs): atlas timing
+                // metadata contract + bob/breathe and shake/hit-flash presets
+                ,("atlas timing metadata contract and round trip", TestAnimationTimingAtlasContract)
+                ,("bob-breathe deformation reference sweep", TestAnimationTimingBobBreatheReference)
+                ,("shake-hit-flash deformation reference sweep", TestAnimationTimingShakeFlashReference)
+                // EffectsFiltersDeepTests.cs (batch3.4 agent, item #7)
+                ,("outline silhouette expansion reference", TestEffectsOutlineReferenceModel)
+                ,("glow halo composite reference", TestEffectsGlowReferenceModel)
+                ,("hsv color shift exact and fuzz reference", TestEffectsColorShiftHsvReference)
+                ,("effect descriptor wire contract and round trip", TestEffectsDescriptorWireContract)
+                ,("png crc single-source consolidation", TestEffectsPngCrcSingleSource)
+                // SubElementAttachmentDeepTests.cs (batch3.5 agent, item #6)
+                ,("attachment shared validator matrix", TestAttachmentSharedValidator)
+                ,("attachment wire writer and round trip", TestAttachmentWireWriterAndRoundTrip)
+                // MapPipelineDeepTests.cs (batch3.6 agent, item #5)
+                ,("map file round trip and envelope", TestMapFileRoundTripAndEnvelope)
+                ,("map file validation matrix", TestMapFileValidationMatrix)
+                ,("map file corruption matrix", TestMapFileCorruptionMatrix)
+                ,("tileset manifest validator matrix", TestTilesetManifestValidatorMatrix)
+                ,("tileset wire writer and round trip", TestTilesetWireWriterAndRoundTrip)
             };
 
             int failures = 0;
@@ -252,6 +324,16 @@ namespace EFYVBackend.Verification
             Assert(!SafePathPolicy.IsSafeFileStem("COM1"));
             Assert(!SafePathPolicy.IsSafeFileStem("lpt9.data"));
             Assert(SafePathPolicy.IsSafeFileStem("COM10"));
+            Assert(SafePathPolicy.IsSafeFileStem(new string('a', 128)));
+            Assert(!SafePathPolicy.IsSafeFileStem(new string('a', 129)));
+            Assert(!SafePathPolicy.IsSafeFileStem(new string('a', 125) + ".png"));
+            Assert(!SafePathPolicy.IsSafeFileStem("colon:name"));
+            Assert(!SafePathPolicy.IsSafeFileStem("star*name"));
+            Assert(!SafePathPolicy.IsSafeFileStem("question?name"));
+            Assert(!SafePathPolicy.IsSafeFileStem("quote\"name"));
+            Assert(!SafePathPolicy.IsSafeFileStem("angle<name>"));
+            Assert(!SafePathPolicy.IsSafeFileStem("pipe|name"));
+            Assert(!SafePathPolicy.IsSafeFileStem("control" + (char)31 + "name"));
 
             string root = Path.Combine(Path.GetTempPath(), "EFYVPath-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
@@ -397,6 +479,10 @@ namespace EFYVBackend.Verification
             for (int i = 0; i < solidDestination.Length; i++) AssertEqual(0xFFFFFFFFu, solidDestination[i]);
             for (int i = 0; i < solidSource.Length; i++) AssertEqual(0xFFFFFFFFu, solidSource[i]);
 
+            // A single opaque white pixel on a transparent canvas: alpha spreads to the
+            // 3x3 average (255 / 9 -> 28) while the color stays fully white, because the
+            // blur accumulates premultiplied alpha and divides the color sums by the
+            // alpha sum. The old straight-alpha average produced 0x1C1C1C1C dark halos.
             uint[] impulseSource = new uint[9];
             uint[] impulseDestination = new uint[9];
             uint[] scratch = new uint[9];
@@ -407,9 +493,32 @@ namespace EFYVBackend.Verification
             {
                 FastEffects.BoxBlur(sourcePointer, destinationPointer, scratchPointer, 3, 3, 1);
             }
-            for (int i = 0; i < impulseDestination.Length; i++) AssertEqual(0x1C1C1C1Cu, impulseDestination[i]);
+            for (int i = 0; i < impulseDestination.Length; i++) AssertEqual(0x1CFFFFFFu, impulseDestination[i]);
             AssertEqual(0xFFFFFFFFu, impulseSource[4]);
             AssertEqual(0u, impulseSource[0]);
+
+            // Same contract for a colored impulse: an opaque red sprite pixel next to
+            // transparent black neighbors must fade in alpha only, never darken red.
+            uint[] redImpulseSource = new uint[9];
+            uint[] redImpulseDestination = new uint[9];
+            redImpulseSource[4] = 0xFF0000FFu;
+            fixed (uint* sourcePointer = redImpulseSource)
+            fixed (uint* destinationPointer = redImpulseDestination)
+            {
+                FastEffects.BoxBlur(sourcePointer, destinationPointer, 3, 3, 1);
+            }
+            for (int i = 0; i < redImpulseDestination.Length; i++) AssertEqual(0x1C0000FFu, redImpulseDestination[i]);
+
+            // Fully transparent input stays exactly zero (no color bleed from the
+            // transparent pixels' RGB payloads either).
+            uint[] transparentSource = { 0x00FF00FFu, 0x0000FF00u, 0x00ABCDEFu, 0x00123456u };
+            uint[] transparentDestination = new uint[4];
+            fixed (uint* sourcePointer = transparentSource)
+            fixed (uint* destinationPointer = transparentDestination)
+            {
+                FastEffects.BoxBlur(sourcePointer, destinationPointer, 2, 2, 1);
+            }
+            for (int i = 0; i < transparentDestination.Length; i++) AssertEqual(0u, transparentDestination[i]);
 
             uint[] deformationSource = { 1u, 2u, 3u, 4u };
             uint[] deformationDestination = new uint[4];

@@ -135,7 +135,13 @@ namespace EFYV.Core.Entities
         // Instead, a central C# Manager calls this Tick method, saving thousands of Native-to-Managed overhead calls.
         public virtual void Tick(float deltaTime)
         {
-            if (TargetPlayer != null)
+            // Item #7: authored flash countdowns run on the central loop.
+            TickAuthoredEffects(deltaTime);
+            bool chasing = TargetPlayer != null && !IsTargetingDeadPlayer();
+            // Item #13: chasing enemies play their walk clip, idle otherwise
+            // (data-driven: only takes effect if the atlas names such a clip).
+            PlayAnimation(chasing ? GameConfig.Animation.StateWalk : GameConfig.Animation.StateIdle);
+            if (chasing)
             {
                 Move(deltaTime);
             }
@@ -143,6 +149,16 @@ namespace EFYV.Core.Entities
             {
                 WeaponSystem.TickWeapons(deltaTime);
             }
+            // Item #13: advance the imported animation on the central loop.
+            TickFlipbook(deltaTime);
+        }
+
+        // Game over: enemies never chase the player's corpse. Custom (non-player)
+        // targets set by subclasses or tests keep working.
+        private bool IsTargetingDeadPlayer()
+        {
+            PlayerController player = PlayerController.Instance;
+            return player != null && player.IsDead && ReferenceEquals(TargetPlayer, player.entityTransform);
         }
 
         protected override void Move(float deltaTime)
@@ -171,7 +187,8 @@ namespace EFYV.Core.Entities
             // PERFORMANCE: Double GetComponent Removed.
             // GetComponent forces a heavy C++ interop call which is devastating inside a Physics Stay loop.
             // Instead, we just do a lightning-fast memory reference check against the Player Singleton.
-            if (PlayerController.Instance != null && collision.gameObject == PlayerController.Instance.gameObject)
+            if (PlayerController.Instance != null && !PlayerController.Instance.IsDead &&
+                collision.gameObject == PlayerController.Instance.gameObject)
             {
                 // In a full implementation, you'd have an attack cooldown or rely on Player's i-frames
                 Attack(PlayerController.Instance);

@@ -228,7 +228,14 @@ internal static partial class Program
             Pack(4, 0, 0, 255), Pack(5, 0, 0, 128), Pack(6, 0, 0, 255),
             Pack(7, 0, 0, 255), Pack(8, 0, 0, 255), Pack(9, 0, 0, 255)
         };
-        var stamp = new StampTool { ActiveSubElement = new SubElement("stamp", 3, 3, stampPixels) };
+        // Item #6: BakePixels is the LEGACY destructive mode; the default
+        // mode places repositionable attachments (covered by
+        // SubElementPipelineTests).
+        var stamp = new StampTool
+        {
+            Mode = StampToolMode.BakePixels,
+            ActiveSubElement = new SubElement("stamp", 3, 3, stampPixels)
+        };
         var destination = new Frame(4, 4);
         for (int i = 0; i < destination.Layers[0].Pixels.Length; i++)
             destination.Layers[0].Pixels[i].Rgba = Pack(20, 30, 40, 255);

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using EFYV.Core.Entities;
 using EFYV.Core.Weapons;
 using EFYV.Core.Items;
 using EFYV.Core.Data;
@@ -12,13 +13,29 @@ namespace EFYV.Core.Controllers
     public class WeaponController : MonoBehaviour
     {
         private EFYVBackend.Core.Models.InventoryData Data = new EFYVBackend.Core.Models.InventoryData { Block = new EFYVBackend.Core.Data.FastSchemaBlock() };
-        
+
         public List<Weapon> activeWeapons = new List<Weapon>();
         public List<PowerUp> activePowerUps = new List<PowerUp>();
+
+        // The combat side of this controller's owner. Every added or evolved weapon
+        // is stamped with this faction so targeting and projectile damage never hit
+        // the owner's own side.
+        public Faction OwnerFaction { get; private set; }
+
+        // True while the inventory has room for a NEW weapon. UpgradeManager uses
+        // this to keep offering normal upgrades to players with empty slots.
+        public bool HasFreeWeaponSlot => activeWeapons.Count < Data.MaxWeapons;
 
         public void Initialize(int maxWeapons)
         {
             Data.MaxWeapons = maxWeapons;
+            // The host object decides the side once: enemies fight the player,
+            // everything else fights enemies (Faction.Player is the zero default).
+            OwnerFaction = GetComponent<Enemy>() != null ? Faction.Enemy : Faction.Player;
+            for (int i = 0; i < activeWeapons.Count; i++)
+            {
+                activeWeapons[i].OwnerFaction = OwnerFaction;
+            }
         }
 
         public void TickWeapons(float deltaTime)
@@ -33,7 +50,8 @@ namespace EFYV.Core.Controllers
         public bool TryAddWeapon(Weapon weaponPrefabKey)
         {
             if (activeWeapons.Count >= Data.MaxWeapons) return false;
-            
+
+            weaponPrefabKey.OwnerFaction = OwnerFaction;
             activeWeapons.Add(weaponPrefabKey);
             return true;
         }
@@ -79,6 +97,7 @@ namespace EFYV.Core.Controllers
 
             Weapon evolvedWeapon = UnityEngine.Object.Instantiate(chosenEvolution.EvolvedWeaponPrefab, transform);
             evolvedWeapon.transform.localPosition = Vector3.zero;
+            evolvedWeapon.OwnerFaction = OwnerFaction;
             activeWeapons[index] = evolvedWeapon;
 
             PowerUp consumedPowerUp = activePowerUps[consumedPowerUpIndex];

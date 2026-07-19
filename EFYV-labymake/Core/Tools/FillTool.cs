@@ -5,6 +5,8 @@ namespace EFYVLabyMake.Core.Tools
 {
     public sealed class FillTool : ColorLayerTool
     {
+        public SymmetryMode Symmetry { get; set; }
+
         public override void OnPointerDown(EFYVProject project, Frame currentFrame, int x, int y)
         {
             Layer targetLayer;
@@ -12,8 +14,21 @@ namespace EFYVLabyMake.Core.Tools
                 x < Config.Canvas.MinCoordinate || y < Config.Canvas.MinCoordinate ||
                 x >= targetLayer.Width || y >= targetLayer.Height) return;
 
-            // Trigger the heavily optimized C-Level flood fill
-            UnsafeFloodFill(targetLayer, x, y, CurrentColor);
+            // Trigger the heavily optimized C-Level flood fill; mirror mode
+            // seeds an additional fill at each mirrored coordinate (a seed whose
+            // region was already recolored is a backend no-op).
+            for (int variant = Config.Common.FirstIndex;
+                variant < Config.Tool.Symmetry.VariantCount;
+                variant++)
+            {
+                int seedX, seedY, unusedX, unusedY;
+                if (!SymmetryVariants.TryGetVariant(
+                    Symmetry, variant, targetLayer.Width, targetLayer.Height,
+                    x, y, x, y,
+                    out seedX, out seedY, out unusedX, out unusedY))
+                    continue;
+                UnsafeFloodFill(targetLayer, seedX, seedY, CurrentColor);
+            }
         }
 
         // ALGORITHMIC AUDIT: Fast Pointer-Based Flood Fill (Bucket Tool)

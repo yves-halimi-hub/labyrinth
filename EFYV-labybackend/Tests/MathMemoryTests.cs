@@ -606,6 +606,218 @@ namespace EFYVBackend.Verification
             }
         }
 
+        // ------------------------------------------------------------------
+        // rectangle and ellipse shape rasterizer reference models (item #9)
+        // ------------------------------------------------------------------
+        private static unsafe void TestShapeRasterizerReferenceModels()
+        {
+            const int width = 29;
+            const int height = 23;
+            Random random = new Random(0x5A9E0001);
+
+            for (int iteration = 0; iteration < 500; iteration++)
+            {
+                int x0 = random.Next(-20, width + 20);
+                int y0 = random.Next(-20, height + 20);
+                int x1 = random.Next(-20, width + 20);
+                int y1 = random.Next(-20, height + 20);
+                int thickness = 1 + random.Next(9);
+                bool filled = random.Next(2) == 0;
+                uint color = NextUInt(random) | 0xFF000000u;
+
+                uint[] guardedRect = CreateGuardedPixels(width * height, GuardPixelA, GuardPixelB);
+                uint[] expectedRect = new uint[width * height];
+                ReferenceDrawRectangle(expectedRect, width, height, x0, y0, x1, y1, color, thickness, filled);
+                fixed (uint* pixels = guardedRect)
+                    Algorithms.DrawRectangle(pixels + 1, width, height, x0, y0, x1, y1, color, thickness, filled);
+                AssertPixelGuards(guardedRect, GuardPixelA, GuardPixelB);
+                for (int i = 0; i < expectedRect.Length; i++) AssertEqual(expectedRect[i], guardedRect[i + 1]);
+
+                uint[] guardedEllipse = CreateGuardedPixels(width * height, GuardPixelB, GuardPixelA);
+                uint[] expectedEllipse = new uint[width * height];
+                ReferenceDrawEllipse(expectedEllipse, width, height, x0, y0, x1, y1, color, thickness, filled);
+                fixed (uint* pixels = guardedEllipse)
+                    Algorithms.DrawEllipse(pixels + 1, width, height, x0, y0, x1, y1, color, thickness, filled);
+                AssertPixelGuards(guardedEllipse, GuardPixelB, GuardPixelA);
+                for (int i = 0; i < expectedEllipse.Length; i++) AssertEqual(expectedEllipse[i], guardedEllipse[i + 1]);
+            }
+
+            // Far off-canvas anchors terminate (bounded by the canvas sweep) and
+            // clip exactly like the reference model.
+            {
+                uint[] guarded = CreateGuardedPixels(width * height, GuardPixelA, GuardPixelB);
+                uint[] expected = new uint[width * height];
+                ReferenceDrawRectangle(expected, width, height, -100000, -100000, 100000, 100000, 7u, 3, false);
+                fixed (uint* pixels = guarded)
+                    Algorithms.DrawRectangle(pixels + 1, width, height, -100000, -100000, 100000, 100000, 7u, 3, false);
+                AssertPixelGuards(guarded, GuardPixelA, GuardPixelB);
+                // The border band lies entirely off-canvas, so nothing is drawn.
+                for (int i = 0; i < expected.Length; i++)
+                {
+                    AssertEqual(0u, expected[i]);
+                    AssertEqual(expected[i], guarded[i + 1]);
+                }
+
+                uint[] guardedFilled = CreateGuardedPixels(width * height, GuardPixelA, GuardPixelB);
+                fixed (uint* pixels = guardedFilled)
+                    Algorithms.DrawEllipse(pixels + 1, width, height, -100000, -100000, 100000, 100000, 7u, 1, true);
+                AssertPixelGuards(guardedFilled, GuardPixelA, GuardPixelB);
+                // The canvas sits well inside the huge ellipse: fully covered.
+                for (int i = 0; i < width * height; i++) AssertEqual(7u, guardedFilled[i + 1]);
+            }
+
+            // Degenerate boxes: a single point and a flat (zero-radius) ellipse
+            // degrade to their filled bounding box.
+            {
+                uint[] guarded = CreateGuardedPixels(width * height, GuardPixelA, GuardPixelB);
+                fixed (uint* pixels = guarded)
+                {
+                    Algorithms.DrawRectangle(pixels + 1, width, height, 4, 5, 4, 5, 9u, 2, false);
+                    Algorithms.DrawEllipse(pixels + 1, width, height, 10, 5, 10, 5, 11u, 1, false);
+                    Algorithms.DrawEllipse(pixels + 1, width, height, 2, 9, 12, 9, 13u, 1, false);
+                }
+                AssertPixelGuards(guarded, GuardPixelA, GuardPixelB);
+                AssertEqual(9u, guarded[1 + (5 * width) + 4]);
+                AssertEqual(11u, guarded[1 + (5 * width) + 10]);
+                for (int x = 2; x <= 12; x++) AssertEqual(13u, guarded[1 + (9 * width) + x]);
+            }
+
+            // Outline rings never develop gaps: every boundary pixel of the
+            // filled ellipse (a filled pixel with an unfilled 4-neighbor or on
+            // the box edge) is also part of the 1-pixel outline.
+            foreach (var box in new[] { new[] { 2, 3, 22, 17 }, new[] { 0, 0, 28, 6 }, new[] { 5, 2, 9, 20 } })
+            {
+                uint[] filledPixels = new uint[width * height];
+                uint[] outlinePixels = new uint[width * height];
+                fixed (uint* filledPtr = filledPixels)
+                fixed (uint* outlinePtr = outlinePixels)
+                {
+                    Algorithms.DrawEllipse(filledPtr, width, height, box[0], box[1], box[2], box[3], 1u, 1, true);
+                    Algorithms.DrawEllipse(outlinePtr, width, height, box[0], box[1], box[2], box[3], 1u, 1, false);
+                }
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        int index = (y * width) + x;
+                        if (filledPixels[index] == 0u)
+                        {
+                            // The outline is a subset of the filled ellipse.
+                            AssertEqual(0u, outlinePixels[index]);
+                            continue;
+                        }
+                        bool boundary =
+                            x == 0 || filledPixels[index - 1] == 0u ||
+                            x == width - 1 || filledPixels[index + 1] == 0u ||
+                            y == 0 || filledPixels[index - width] == 0u ||
+                            y == height - 1 || filledPixels[index + width] == 0u;
+                        if (boundary) AssertEqual(1u, outlinePixels[index]);
+                    }
+                }
+
+                // A ring thicker than both radii degrades to the solid fill.
+                uint[] thickRing = new uint[width * height];
+                fixed (uint* thickPtr = thickRing)
+                    Algorithms.DrawEllipse(thickPtr, width, height, box[0], box[1], box[2], box[3], 1u, width + height, false);
+                AssertSequenceEqual(filledPixels, thickRing);
+            }
+
+            // Guard contracts shared with the other drawing entry points.
+            AssertThrows<ArgumentNullException>(() => Algorithms.DrawRectangle(null, 1, 1, 0, 0, 0, 0, 1u, 1, true));
+            AssertThrows<ArgumentNullException>(() => Algorithms.DrawEllipse(null, 1, 1, 0, 0, 0, 0, 1u, 1, true));
+            AssertThrows<ArgumentOutOfRangeException>(() => ShapeOnSinglePixel(0, 1, 1));
+            AssertThrows<ArgumentOutOfRangeException>(() => ShapeOnSinglePixel(1, 0, 1));
+            AssertThrows<ArgumentOutOfRangeException>(() => ShapeOnSinglePixel(1, 1, 0));
+            AssertThrows<ArgumentOutOfRangeException>(() => EllipseOnSinglePixel(0, 1, 1));
+            AssertThrows<ArgumentOutOfRangeException>(() => EllipseOnSinglePixel(1, 0, 1));
+            AssertThrows<ArgumentOutOfRangeException>(() => EllipseOnSinglePixel(1, 1, -1));
+        }
+
+        private static unsafe void ShapeOnSinglePixel(int width, int height, int thickness)
+        {
+            uint pixel = 0;
+            Algorithms.DrawRectangle(&pixel, width, height, 0, 0, 0, 0, 1u, thickness, false);
+        }
+
+        private static unsafe void EllipseOnSinglePixel(int width, int height, int thickness)
+        {
+            uint pixel = 0;
+            Algorithms.DrawEllipse(&pixel, width, height, 0, 0, 0, 0, 1u, thickness, false);
+        }
+
+        private static void ReferenceDrawRectangle(
+            uint[] canvas, int width, int height,
+            int x0, int y0, int x1, int y1,
+            uint color, int thickness, bool filled)
+        {
+            long minX = Math.Min(x0, x1);
+            long maxX = Math.Max(x0, x1);
+            long minY = Math.Min(y0, y1);
+            long maxY = Math.Max(y0, y1);
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (x < minX || x > maxX || y < minY || y > maxY) continue;
+                    bool inHole = !filled &&
+                        x >= minX + thickness && x <= maxX - thickness &&
+                        y >= minY + thickness && y <= maxY - thickness;
+                    if (!inHole) canvas[(y * width) + x] = color;
+                }
+            }
+        }
+
+        private static void ReferenceDrawEllipse(
+            uint[] canvas, int width, int height,
+            int x0, int y0, int x1, int y1,
+            uint color, int thickness, bool filled)
+        {
+            long minX = Math.Min(x0, x1);
+            long maxX = Math.Max(x0, x1);
+            long minY = Math.Min(y0, y1);
+            long maxY = Math.Max(y0, y1);
+            double radiusX = (maxX - minX) / 2.0;
+            double radiusY = (maxY - minY) / 2.0;
+            if (radiusX == 0.0 || radiusY == 0.0)
+            {
+                ReferenceDrawRectangle(canvas, width, height, x0, y0, x1, y1, color, thickness, true);
+                return;
+            }
+
+            double centerX = (minX + maxX) / 2.0;
+            double centerY = (minY + maxY) / 2.0;
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (x < minX || x > maxX || y < minY || y > maxY) continue;
+                    if (!ReferenceInsideEllipse(x, y, centerX, centerY, radiusX, radiusY)) continue;
+                    if (!filled)
+                    {
+                        // Morphological ring: survive erosion by the
+                        // thickness-radius square (all four corners inside,
+                        // which suffices for a convex shape) and the pixel is
+                        // NOT part of the outline.
+                        bool eroded =
+                            ReferenceInsideEllipse(x - thickness, y - thickness, centerX, centerY, radiusX, radiusY) &&
+                            ReferenceInsideEllipse(x + thickness, y - thickness, centerX, centerY, radiusX, radiusY) &&
+                            ReferenceInsideEllipse(x - thickness, y + thickness, centerX, centerY, radiusX, radiusY) &&
+                            ReferenceInsideEllipse(x + thickness, y + thickness, centerX, centerY, radiusX, radiusY);
+                        if (eroded) continue;
+                    }
+                    canvas[(y * width) + x] = color;
+                }
+            }
+        }
+
+        private static bool ReferenceInsideEllipse(
+            double x, double y, double centerX, double centerY, double radiusX, double radiusY)
+        {
+            double normalizedX = (x - centerX) / radiusX;
+            double normalizedY = (y - centerY) / radiusY;
+            return (normalizedX * normalizedX) + (normalizedY * normalizedY) <= 1.0;
+        }
+
         private static uint ReferenceXorShift(uint state)
         {
             state ^= state << 13;
@@ -833,26 +1045,43 @@ namespace EFYVBackend.Verification
             FastMemory.StampBlit(&source, 0, 1, &destination, 1, 1, 0, 0);
         }
 
+        // Mirrors FastEffects.BoxBlur exactly: the horizontal pass converts source
+        // pixels to alpha-premultiplied bytes and averages them with the same
+        // 16-bit fixed-point reciprocal the product uses; the vertical pass
+        // averages those premultiplied bytes and un-premultiplies once at the end
+        // (color sums divided by the alpha sum), so transparent neighbors cannot
+        // darken sprite edges.
         private static uint[] ReferenceSeparableBlur(uint[] source, int width, int height, int radius)
         {
             if (radius == 0) return (uint[])source.Clone();
             int divisor = radius * 2 + 1;
+            uint reciprocal = (uint)((1L << 16) / divisor);
             uint[] horizontal = new uint[source.Length];
             uint[] destination = new uint[source.Length];
             for (int y = 0; y < height; y++)
             {
                 for (int x = 0; x < width; x++)
-                    horizontal[y * width + x] = AverageWindow(source, width, height, x, y, radius, divisor, true);
+                    horizontal[y * width + x] = AverageWindow(source, width, height, x, y, radius, reciprocal, true, true, false);
             }
             for (int y = 0; y < height; y++)
             {
                 for (int x = 0; x < width; x++)
-                    destination[y * width + x] = AverageWindow(horizontal, width, height, x, y, radius, divisor, false);
+                    destination[y * width + x] = AverageWindow(horizontal, width, height, x, y, radius, reciprocal, false, false, true);
             }
             return destination;
         }
 
-        private static uint AverageWindow(uint[] pixels, int width, int height, int x, int y, int radius, int divisor, bool horizontal)
+        private static uint AverageWindow(
+            uint[] pixels,
+            int width,
+            int height,
+            int x,
+            int y,
+            int radius,
+            uint reciprocal,
+            bool horizontal,
+            bool premultiplyInput,
+            bool unpremultiplyOutput)
         {
             int r = 0;
             int g = 0;
@@ -863,15 +1092,46 @@ namespace EFYVBackend.Verification
                 int sampleX = horizontal ? System.Math.Clamp(x + offset, 0, width - 1) : x;
                 int sampleY = horizontal ? y : System.Math.Clamp(y + offset, 0, height - 1);
                 uint pixel = pixels[sampleY * width + sampleX];
-                r += (byte)pixel;
-                g += (byte)(pixel >> 8);
-                b += (byte)(pixel >> 16);
-                a += (byte)(pixel >> 24);
+                int alpha = (byte)(pixel >> 24);
+                if (premultiplyInput)
+                {
+                    r += ((byte)pixel * alpha + 127) / 255;
+                    g += ((byte)(pixel >> 8) * alpha + 127) / 255;
+                    b += ((byte)(pixel >> 16) * alpha + 127) / 255;
+                }
+                else
+                {
+                    r += (byte)pixel;
+                    g += (byte)(pixel >> 8);
+                    b += (byte)(pixel >> 16);
+                }
+                a += alpha;
             }
-            return (uint)((r + divisor / 2) / divisor) |
-                ((uint)((g + divisor / 2) / divisor) << 8) |
-                ((uint)((b + divisor / 2) / divisor) << 16) |
-                ((uint)((a + divisor / 2) / divisor) << 24);
+
+            uint averageR = FixedPointAverage(r, reciprocal);
+            uint averageG = FixedPointAverage(g, reciprocal);
+            uint averageB = FixedPointAverage(b, reciprocal);
+            uint averageA = FixedPointAverage(a, reciprocal);
+            if (unpremultiplyOutput)
+            {
+                if (averageA == 0) return 0u;
+                averageR = UnpremultiplyReference(averageR, averageA);
+                averageG = UnpremultiplyReference(averageG, averageA);
+                averageB = UnpremultiplyReference(averageB, averageA);
+            }
+            return averageR | (averageG << 8) | (averageB << 16) | (averageA << 24);
+        }
+
+        private static uint FixedPointAverage(int sum, uint reciprocal)
+        {
+            uint average = (uint)(((ulong)(uint)sum * reciprocal + 32768) >> 16);
+            return average > 255 ? 255 : average;
+        }
+
+        private static uint UnpremultiplyReference(uint premultiplied, uint alpha)
+        {
+            uint channel = (premultiplied * 255 + alpha / 2) / alpha;
+            return channel > 255 ? 255 : channel;
         }
 
         private static unsafe void BlurNullSource()

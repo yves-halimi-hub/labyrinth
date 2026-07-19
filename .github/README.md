@@ -6,6 +6,6 @@ GitHub-hosted automation for the Labyrinth monorepo. Workflows live here because
 
 ## Browse
 
-- [Workflows](workflows/README.md): tagged Unity build and Steam deployment.
+- [Workflows](workflows/README.md): push/PR verification of all four test suites, plus tagged Unity build and Steam deployment.
 
 Secrets, application IDs, and release credentials belong in GitHub repository configuration, not in source files.

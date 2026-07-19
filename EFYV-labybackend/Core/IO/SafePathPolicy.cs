@@ -6,6 +6,20 @@ namespace EFYVBackend.Core.IO
 {
     public static class SafePathPolicy
     {
+        // Longest stem accepted anywhere in the system; the rationale lives with the
+        // constant in EFYV-LabyrinthConfig.cs (Backend.IO.MaxFileStemLength).
+        private const int MaxFileStemLength = BackendConfig.IO.MaxFileStemLength;
+
+        // Path.GetInvalidFileNameChars() only rejects '/' and NUL on non-Windows
+        // hosts, which would let a stem such as "a:b" or "a*b" through on Linux and
+        // then fail (or alias another file) once the export lands in a Windows Unity
+        // project. The stem policy therefore rejects the full Windows-invalid set on
+        // every platform.
+        private static readonly char[] WindowsInvalidFileNameChars =
+        {
+            '"', '<', '>', '|', ':', '*', '?', '\\', '/'
+        };
+
         public static bool IsSafeFileStem(string value)
         {
             if (string.IsNullOrWhiteSpace(value) ||
@@ -14,6 +28,7 @@ namespace EFYVBackend.Core.IO
             {
                 return false;
             }
+            if (value.Length > MaxFileStemLength) return false;
             if (value.EndsWith(BackendConfig.Exporter.CurrentDirectoryName, StringComparison.Ordinal) ||
                 value.EndsWith(BackendConfig.Exporter.TrailingSpace, StringComparison.Ordinal))
             {
@@ -21,6 +36,11 @@ namespace EFYVBackend.Core.IO
             }
             if (!string.Equals(Path.GetFileName(value), value, StringComparison.Ordinal)) return false;
             if (value.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) return false;
+            if (value.IndexOfAny(WindowsInvalidFileNameChars) >= 0) return false;
+            for (int i = 0; i < value.Length; i++)
+            {
+                if (value[i] < ' ') return false;
+            }
 
             int extensionIndex = value.IndexOf('.');
             string baseName = (extensionIndex < 0 ? value : value.Substring(0, extensionIndex)).ToUpperInvariant();

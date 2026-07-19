@@ -6,6 +6,12 @@ using BackendConfig = EFYVBackend.Core.Data.EFYVLabyrinthConfig.Backend;
 namespace EFYVBackend.Core.Collections
 {
     // Array-backed pool with bounded, lazy factory creation.
+    //
+    // RENT CONTRACT (explicit): a null result from Rent() means exactly one thing -
+    // the pool is exhausted (all `Capacity` items are currently rented). A factory
+    // that returns null (or a duplicate reference) is a programming error and throws
+    // InvalidOperationException instead of being conflated with exhaustion, so callers
+    // can rely on "null == try again later" without masking broken factories.
     public class FastPool<T> where T : class
     {
         private readonly T[] items;
@@ -30,6 +36,7 @@ namespace EFYVBackend.Core.Collections
             this.factoryMethod = factoryMethod;
         }
 
+        // Returns null ONLY when the pool is exhausted; see the class-level contract.
         public T Rent()
         {
             if (head > BackendConfig.Collections.EmptyPoolCount)

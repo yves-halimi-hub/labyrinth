@@ -8,9 +8,11 @@ and the Labyrinth Unity game, plus allocation-conscious collections, pixel
 operations, export/import, persistence, math, and deterministic verification.
 
 This component is source-first: there is no root library project. The local and
-sibling verification projects compile `Core/**/*.cs` directly. Production
-integrations must preserve the `EFYVBackend.Core.*` namespaces, unsafe-code
-setting, schema offsets, and serialized field names.
+sibling verification projects compile `Core/**/*.cs` directly, and the Unity
+game consumes `Core` as a local UPM package (`com.efyv.labybackend`, see
+[Core/README.md](Core/README.md)) compiled into the `EFYVBackend.Core`
+assembly. Production integrations must preserve the `EFYVBackend.Core.*`
+namespaces, unsafe-code setting, schema offsets, and serialized field names.
 
 ## Dependencies and consumers
 

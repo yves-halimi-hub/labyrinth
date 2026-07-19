@@ -27,6 +27,10 @@ namespace EFYVBackend.Core.Data
             public const string DamageToPlayerField = "damageToPlayer";
             public const string ExperienceValueField = "experienceValue";
             public const string Phase2HealthThresholdField = "phase2HealthThreshold";
+            public const string BaseDamageField = "baseDamage";
+            public const string CooldownTimerField = "cooldownTimer";
+            public const string IsWalkableField = "isWalkable";
+            public const string TrapDamageField = "trapDamage";
             public const string FacingField = "facing";
             public const string EfyvExtension = ".efyvlaby";
             public const string PngExtension = ".png";
@@ -46,6 +50,64 @@ namespace EFYVBackend.Core.Data
             public const string FacingFileSuffixDown = "_Down";
             public const string FacingFileSuffixLeft = "_Left";
             public const string FacingFileSuffixRight = "_Right";
+
+            // Item #7 runtime-effect trigger tags. Shared because both sides
+            // speak them: the designer offers them when authoring effect
+            // descriptors and the game runtime fires them from the matching
+            // LivingEntity seams (OnSpawn / TakeDamage).
+            public const string EffectTriggerOnSpawn = "OnSpawn";
+            public const string EffectTriggerOnDamaged = "OnDamaged";
+
+            // ----------------------------------------------------------------
+            // Shared schema-field manifest (#15): the single wire-format table
+            // mapping .efyvlaby property names to AssetSchema block slots.
+            // The LabyMake designer schema (field definitions below) and the
+            // Unity importer (EFYVPixelArtImporter.ApplySchemaProperties) both
+            // consume this table; neither side may hardcode a key list again.
+            // ----------------------------------------------------------------
+            public enum SchemaFieldKind
+            {
+                Float = 0,
+                // Stored in the block as Serialization.TrueValue/FalseValue;
+                // accepted on the wire as JSON true/false or 0/1 numbers.
+                Boolean = 1
+            }
+
+            public readonly struct SchemaFieldMapping
+            {
+                public string FieldName { get; }
+                public int Slot { get; }
+                public SchemaFieldKind Kind { get; }
+
+                public SchemaFieldMapping(string fieldName, int slot, SchemaFieldKind kind)
+                {
+                    FieldName = fieldName;
+                    Slot = slot;
+                    Kind = kind;
+                }
+            }
+
+            public static readonly SchemaFieldMapping[] AssetSchemaFieldManifest =
+            {
+                new SchemaFieldMapping(MaxHealthField, (int)AssetSchema.MaxHealth, SchemaFieldKind.Float),
+                new SchemaFieldMapping(BaseSpeedField, (int)AssetSchema.BaseSpeed, SchemaFieldKind.Float),
+                new SchemaFieldMapping(DamageToPlayerField, (int)AssetSchema.DamageToPlayer, SchemaFieldKind.Float),
+                new SchemaFieldMapping(ExperienceValueField, (int)AssetSchema.ExperienceValue, SchemaFieldKind.Float),
+                new SchemaFieldMapping(Phase2HealthThresholdField, (int)AssetSchema.Phase2HealthThreshold, SchemaFieldKind.Float),
+                new SchemaFieldMapping(BaseDamageField, (int)AssetSchema.BaseDamage, SchemaFieldKind.Float),
+                new SchemaFieldMapping(CooldownTimerField, (int)AssetSchema.CooldownTimer, SchemaFieldKind.Float),
+                new SchemaFieldMapping(IsWalkableField, (int)AssetSchema.IsWalkable, SchemaFieldKind.Boolean),
+                new SchemaFieldMapping(TrapDamageField, (int)AssetSchema.TrapDamage, SchemaFieldKind.Float)
+            };
+
+            // Identity/routing keys that legitimately appear next to schema
+            // fields in the properties object without occupying a block slot.
+            public static readonly string[] NonSchemaPropertyFields =
+            {
+                EntityNameField,
+                AssetNameField,
+                FacingField
+            };
         }
 
         public static class Game
@@ -76,6 +138,10 @@ namespace EFYVBackend.Core.Data
                 public const int InitialSessionCoins = 0;
                 public const int ZeroAmount = 0;
                 public const int LevelIncrement = 1;
+                // Timed-buff effect for the merchant haste potion (#34): applied
+                // by PlayerController.ApplyTimedBuff (refresh-never-stack,
+                // reverted on expiry).
+                public const float MoveSpeedBuffMultiplier = 1.5f;
             }
 
             public static class Weapons
@@ -89,6 +155,11 @@ namespace EFYVBackend.Core.Data
                 public const string LogOfferingSpecialAttacks = "Offering {0} special attacks. Penalty Multiplier: {1}";
                 public const string LogScreenWipe = "Screen Wipe Activated!";
                 public const string LogMobHealthHalved = "All Mob Health Halved!";
+                public const string LogGrantedNewWeapon = "Upgrade granted a new weapon: {0}";
+                public const string LogUpgradedWeapon = "Upgrade raised {0} to level {1}.";
+
+                // Tooltips
+                public const string TooltipNormalWeaponPool = "Weapon prefabs a normal upgrade may grant into a free player slot.";
 
                 public const string SpecialAttackScreenWipeName = "ScreenWipe";
                 public const string SpecialAttackHalfMobHealthName = "HalfMobHealth";
@@ -207,6 +278,62 @@ namespace EFYVBackend.Core.Data
                 public const EFYVBackend.Core.Math.FastMath.FacingDirection InitialFacing = EFYVBackend.Core.Math.FastMath.FacingDirection.Down;
             }
 
+            // Item #7 runtime interpretation of authored effect descriptors:
+            // flash/tint recolor the SpriteRenderer on their trigger seams and
+            // the flash countdown is ticked by the central update loops.
+            // particleHook descriptors are stored on the imported asset but
+            // NOT interpreted yet (deferred until a particle pipeline exists).
+            public static class EntityEffects
+            {
+                public const string TypeFlash = EFYVLabyrinthConfig.Backend.Exporter.EffectTypeFlash;
+                public const string TypeTint = EFYVLabyrinthConfig.Backend.Exporter.EffectTypeTint;
+                public const string TypeParticleHook =
+                    EFYVLabyrinthConfig.Backend.Exporter.EffectTypeParticleHook;
+                public const string TriggerOnSpawn = EFYVLabyrinthConfig.Shared.EffectTriggerOnSpawn;
+                public const string TriggerOnDamaged = EFYVLabyrinthConfig.Shared.EffectTriggerOnDamaged;
+                public const float MillisecondsPerSecond = 1000f;
+                public const float ExpiredFlashSeconds = 0f;
+            }
+
+            // Item #13 runtime flipbook: LivingEntity plays the CURRENT facing's
+            // imported animation over EntityFacingImportData.Frames, ticked by
+            // the central update loops (Enemy.Tick / PlayerController.Update).
+            // Frame timing honors the imported per-frame durations (0 = inherit
+            // the animation FPS) and the loop-range / ping-pong playback tags.
+            public static class Animation
+            {
+                public const float MillisecondsPerSecond = EntityEffects.MillisecondsPerSecond;
+                // FPS guard when an animation's metadata carries a non-positive
+                // FramesPerSecond (single-source with the designer default).
+                public const int DefaultFramesPerSecond = EFYVLabyrinthConfig.LabyMake.Animation.DefaultFPS;
+                public const int InheritFrameDurationMs = Runtime.EmptyCollectionCount;
+                public const int InitialLocalFrame = Runtime.FirstIndex;
+                public const float InitialFrameTimer = 0f;
+                public const bool InitialReverse = false;
+                public const float NonPositiveDeltaThreshold = 0f;
+                // Runaway guard: cap frame advances in one tick so pathological
+                // (near-zero) frame durations cannot spin the advance loop.
+                public const int MaxAdvancesPerTick = 1024;
+                // Movement-driven animation-state seams. A state takes effect
+                // only when an authored animation carries the matching Name;
+                // otherwise the FIRST animation plays (single-clip atlases just
+                // play their one clip). Attack is an available PlayAnimation
+                // seam (no auto-revert - combat owns its cadence).
+                public const string StateIdle = "idle";
+                public const string StateWalk = "walk";
+                public const string StateAttack = "attack";
+                public const string DefaultState = StateIdle;
+            }
+
+            // Item #14 designer hitboxes to gameplay: LivingEntity syncs the
+            // current facing + flipbook frame's Hurtbox record onto a
+            // BoxCollider2D, reusing the pixel-to-local-units math hoisted into
+            // EntityHitboxGeometry (the same math EFYVHitboxGizmo draws).
+            public static class Hitbox
+            {
+                public const string HurtboxType = EFYVLabyrinthConfig.LabyMake.Hitbox.DefaultKeyHurtbox;
+            }
+
             public static class Enemy
             {
                 public const float BaseSpeedFallback = 4f;
@@ -284,7 +411,18 @@ namespace EFYVBackend.Core.Data
                 public const bool TextureMipmapsEnabled = false;
                 public const int TexturePixelOrigin = 0;
 
+                // Item #5 imported maps: MapViewportController.LoadMapData
+                // loads a matching MapAssetData (produced by EFYVMapImporter
+                // from a published .efyvmap) and only falls back to the
+                // procedural noise map when no imported map exists.
+                public const string LogImportedMapLoaded =
+                    "[MapViewportController] Loaded imported map '{0}' ({1}x{2}).";
+                public const string LogNoImportedMapFallback =
+                    "[MapViewportController] No imported map for id '{0}'; using procedural fallback.";
+
                 // Tooltips
+                public const string TooltipImportedMaps =
+                    "Imported map assets (.efyvmap via EFYVMapImporter) selectable by map id.";
                 public const string TooltipDoorTargetMapId = "The ID of the map this door connects to.";
                 public const string TooltipSarcophageMapIds = "List of possible random maps to teleport to.";
                 public const string TooltipSarcophageTrapPrefab = "Enemy prefab to spawn for trap events.";
@@ -295,6 +433,10 @@ namespace EFYVBackend.Core.Data
             public static class EnvironmentData
             {
                 public const float DefaultAnimationSpeed = 0.1f;
+                // Floor for the per-frame animation interval: zero, negative, or NaN
+                // speeds would thrash the frame every tick and invert the OnSpawn
+                // timer randomization range.
+                public const float MinimumAnimationSpeed = 0.01f;
                 public const float DefaultXPGemValue = 10f;
                 public const string LogChestOpened = "Player opened a treasure chest!";
                 public const bool Blocking = true;
@@ -338,6 +480,10 @@ namespace EFYVBackend.Core.Data
 
                 public const float BaseChestChance = 0.05f;
                 public const float BaseCoinChance = 0.3f;
+                // #24: XP gems in the drop table. Regular enemies roll this base
+                // chance (scaled by the survival-time multiplier); bosses and
+                // mini-bosses always drop one.
+                public const float BaseXpGemChance = 0.35f;
                 public const float GuaranteedDropChance = 1f;
                 public const int StandardChestCount = 1;
                 public const int BossMinChestCount = 1;
@@ -413,9 +559,32 @@ namespace EFYVBackend.Core.Data
             public static class Pool
             {
                 public const int DefaultPoolCapacity = 500;
+                // First key handed out by PoolManager.GetPoolKey. Keys are
+                // manager-assigned per prefab reference (never engine instance
+                // ids - Unity 6.6 EntityId is not int-convertible); 0 stays
+                // reserved as Entity.EmptyPrefabPoolKey.
+                public const int FirstPrefabPoolKey = 1;
                 public const float ImmediateDespawnDelay = 0f;
                 public const bool Active = true;
                 public const bool Dormant = false;
+
+                // ----------------------------------------------------------------
+                // #32 prewarm targets: pools are populated up to these counts at
+                // startup seams (FastPool.Prewarm is populate-up-to-target, so
+                // repeated calls are idempotent) instead of paying Instantiate on
+                // the first rent mid-combat.
+                // ----------------------------------------------------------------
+                // SpawnManager.Start, per enemy prefab.
+                public const int EnemyPrewarmCount = 32;
+                // DropManager.Awake, per drop prefab.
+                public const int CoinPrewarmCount = 24;
+                public const int ChestPrewarmCount = 8;
+                public const int XpGemPrewarmCount = 24;
+                // Weapon Awake paths through the static PoolManager.TryPrewarm /
+                // TryPrewarmGameObject hooks (typed projectile prefabs and
+                // splash/drop VFX prefabs).
+                public const int ProjectilePrewarmCount = 16;
+                public const int WeaponVfxPrewarmCount = 8;
             }
 
             public static class Importer
@@ -429,10 +598,23 @@ namespace EFYVBackend.Core.Data
                 public const float SpritePivotNormalized = 0.5f;
 
                 public const string LogDetected = "[EFYV Importer] Detected new or modified art data: {0}";
-                public const string LogError = "Failed to parse " + EFYVLabyrinthConfig.Shared.EfyvExtension + " JSON file.";
                 public const string LogSuccess = "[EFYV Importer] Successfully bridged {0} into Unity OOP system via FastImporter!";
 
-                public const string DefaultEntityName = "UnknownEntity";
+                // Per-cause import failure messages (#16d). Every rejection names
+                // its actual cause instead of the old single generic parse error.
+                public const string LogErrorMalformed = "[EFYV Importer] Malformed " + EFYVLabyrinthConfig.Shared.EfyvExtension + " JSON in {0}.";
+                public const string LogErrorMissingFile = "[EFYV Importer] Metadata file vanished before import: {0}.";
+                public const string LogErrorUnsupportedDocumentVersion = "[EFYV Importer] Unsupported documentVersion {0} in {1} (supported: {2}).";
+                public const string LogErrorMissingProperties = "[EFYV Importer] No properties object in {0}.";
+                public const string LogErrorMissingIdentity = "[EFYV Importer] Rejected {0}: no entityName/assetName identity property.";
+                public const string LogErrorUnsafeIdentity = "[EFYV Importer] Rejected {0}: identity '{1}' is not a safe file stem.";
+                public const string LogErrorInvalidAtlas = "[EFYV Importer] Rejected {0}: invalid atlas metadata ({1}).";
+                public const string LogErrorInvalidAttachments = "[EFYV Importer] Rejected {0}: invalid attachment record at index {1}.";
+                public const string LogErrorInvalidTileset = "[EFYV Importer] Rejected {0}: invalid tileset manifest ({1}).";
+                public const string LogErrorUnknownAssetType = "[EFYV Importer] Rejected {0}: unknown assetType '{1}' (no baseAssetType fallback).";
+                public const string LogErrorExistingAssetTypeMismatch = "[EFYV Importer] Rejected {0}: existing asset is a {1}, expected {2}.";
+                public const string LogWarningUnknownSchemaKeys = "[EFYV Importer] Unknown schema keys in {0} (kept in file, not mapped): {1}.";
+
                 public const string KeyEntityName = EFYVLabyrinthConfig.Shared.EntityNameField;
                 public const string KeyMaxHealth = EFYVLabyrinthConfig.Shared.MaxHealthField;
                 public const string KeyBaseSpeed = EFYVLabyrinthConfig.Shared.BaseSpeedField;
@@ -453,6 +635,95 @@ namespace EFYVBackend.Core.Data
                 public const bool IsNewAsset = true;
                 public const int MaxTextureSize = EFYVLabyrinthConfig.LabyMake.Export.MaxAtlasDimension;
                 public const int MaxAtlasPixelCount = EFYVLabyrinthConfig.LabyMake.Export.MaxAtlasPixelCount;
+            }
+
+            // Item #5: .efyvmap ingestion (EFYVMapImporter) into MapAssetData
+            // assets and the imported-map runtime path in
+            // MapViewportController.LoadMapData.
+            public static class MapImporter
+            {
+                public const string ExtensionMap = EFYVLabyrinthConfig.Backend.MapFile.Extension;
+                public const string ExtensionAsset = "_Map.asset";
+                public const string LogImported = "[EFYV Map Importer] Imported map '{0}' ({1}x{2}, {3} props) from {4}.";
+                public const string LogErrorMissingFile = "[EFYV Map Importer] Map file vanished before import: {0}.";
+                public const string LogErrorMalformed = "[EFYV Map Importer] Malformed map file {0}.";
+                public const string LogErrorUnsafeStem = "[EFYV Map Importer] Rejected {0}: stem '{1}' is not a safe map id.";
+                public const string LogErrorExistingAssetTypeMismatch = "[EFYV Map Importer] Rejected {0}: existing asset at {1} is not a MapAssetData.";
+                public const string LogWarningMissingTilesetSprites = "[EFYV Map Importer] Map '{0}' references tileset '{1}' but no sliced sprites were found next to the map file.";
+            }
+
+            // Live-transport RawArt watcher (#12): the editor-side poller that
+            // notices published exports without waiting for Unity to regain focus.
+            public static class RawArtWatcher
+            {
+                public const double PollIntervalSeconds = 0.25d;
+                // A publish writes the PNG and the .efyvlaby back to back (plus
+                // Unity's own .meta churn); the quiet window coalesces them into
+                // one import batch.
+                public const double DebounceSeconds = 0.3d;
+                public const string LogImported = "[EFYV RawArt Watcher] Imported {0} changed file(s) from {1}.";
+            }
+
+            // Item #4: the game-side debug spawn palette + data-to-prefab
+            // factory. Generic per-archetype template prefabs live under
+            // TemplateDirectory; the factory picks the matching template for an
+            // imported SchemaBackedAssetData, spawns it through PoolManager, and
+            // binds it via LivingEntity/PropEntity LoadData (so the spawned
+            // instance drives the item #13 flipbook + item #14 hurtbox). The
+            // Play-Mode editor window lists the imported assets under
+            // Assets/RawArt and one-clicks the selected one into the running
+            // game, auto-offering the most recently imported/refreshed asset.
+            public static class SpawnPalette
+            {
+                // Archetype template prefab asset paths (editor-loaded via
+                // AssetDatabase). Scene-independent; one shared pool per prefab.
+                public const string TemplateDirectory = "Assets/Prefabs/DebugTemplates";
+                public const string TemplatePathEnemy = TemplateDirectory + "/Enemy.prefab";
+                public const string TemplatePathBoss = TemplateDirectory + "/Boss.prefab";
+                public const string TemplatePathProp = TemplateDirectory + "/Prop.prefab";
+
+                // Where imported assets are discovered: the RawArt export root
+                // the pixel-art importer writes <name>_Data.asset files into.
+                public const string DiscoveryRoot =
+                    EFYVLabyrinthConfig.LabyMake.Export.DirAssets + "/" +
+                    EFYVLabyrinthConfig.LabyMake.Export.DirRawArt;
+                public const string AssetSearchFilter = "t:SchemaBackedAssetData";
+
+                // Player-relative spawn placement (the simpler of the two
+                // options - no scene-view raycast): the selected asset spawns at
+                // the player's position plus this offset, or at world origin
+                // when no player exists in the scene yet.
+                public const float DefaultSpawnOffsetX = 2f;
+                public const float DefaultSpawnOffsetY = 0f;
+
+                // Editor window chrome.
+                public const string WindowTitle = "EFYV Spawn Palette";
+                public const string MenuPath = "EFYV/Debug Spawn Palette";
+                public const string SpawnButtonLabel = "Spawn Selected";
+                public const string RefreshButtonLabel = "Refresh List";
+                public const string HeaderImportedAssets = "Imported assets (Assets/RawArt)";
+                public const string HelpEnterPlayMode = "Enter Play Mode to spawn imported assets into the running game.";
+                public const string HelpNoAssets = "No imported assets found under Assets/RawArt. Push an export from the editor shell.";
+                public const string HelpNoPool = "No PoolManager in the scene - spawning needs the running game.";
+                public const string OffsetFieldLabel = "Spawn offset (from player)";
+                public const string SelectedPrefix = "Selected: ";
+                public const string ArchetypeSuffixFormat = "  [{0}]";
+                public const string UnspawnableSuffix = "  (no archetype)";
+
+                // Factory outcome log messages (per-cause, mirroring the
+                // importer's per-cause rejection style).
+                public const string LogSpawned = "[EFYV Spawn Palette] Spawned '{0}' as {1} archetype at ({2}, {3}).";
+                public const string LogErrorUnknownArchetype = "[EFYV Spawn Palette] Cannot spawn '{0}': no archetype template matches asset type {1}.";
+                public const string LogErrorNoTemplate = "[EFYV Spawn Palette] Cannot spawn '{0}': the {1} archetype template prefab is missing.";
+                public const string LogErrorPoolEmpty = "[EFYV Spawn Palette] Could not spawn '{0}': the {1} pool is exhausted.";
+                public const string LogErrorNoPool = "[EFYV Spawn Palette] Cannot spawn '{0}': no PoolManager in the scene.";
+
+                // Archetype display names (window labels + log messages).
+                public const string ArchetypeNameEnemy = "Enemy";
+                public const string ArchetypeNameBoss = "Boss";
+                public const string ArchetypeNameProp = "Prop";
+
+                public const string UnnamedAsset = "(unnamed)";
             }
 
             public static class DataConfig
@@ -569,6 +840,23 @@ namespace EFYVBackend.Core.Data
                 public const string TooltipAchievementId = "The index (0-255) corresponding to the bit in FastSchemaBlock";
                 public const string TooltipAchievementDatabase = "The database containing all achievement visual and text definitions.";
 
+                // ----------------------------------------------------------------
+                // Event-driven gameplay triggers (#34), consumed by
+                // AchievementManager with O(1) threshold checks. The id/threshold
+                // tables mirror the shipped basis database (BasisData below):
+                // ids 0-4 are the kill ladder ("First Blood".."Labyrinth
+                // Cleaner"), ids 18/19 are the survival pair ("Unstoppable"
+                // 10 min, "Immortal" 30 min). Kill counts are per-session
+                // (PlayerMetaSchema has no lifetime kill slot yet).
+                // ----------------------------------------------------------------
+                public static class Triggers
+                {
+                    public static readonly int[] KillThresholds = { 1, 100, 1000, 10000, 100000 };
+                    public static readonly int[] KillAchievementIds = { 0, 1, 2, 3, 4 };
+                    public static readonly float[] SurvivalThresholdSeconds = { 600f, 1800f };
+                    public static readonly int[] SurvivalAchievementIds = { 18, 19 };
+                }
+
                 public static class BasisData
                 {
                     public static readonly string[] Titles = new string[]
@@ -617,6 +905,7 @@ namespace EFYVBackend.Core.Data
                 public const int DefaultWidth = 64;
                 public const int DefaultHeight = 64;
                 public const int MinCoordinate = Common.FirstIndex;
+                public const int AnchorCenterDivisor = 2;
             }
 
             public static class Color
@@ -758,6 +1047,14 @@ namespace EFYVBackend.Core.Data
                 public const int AdditionalEnemyFieldCount = 2;
                 public const int AdditionalBossFieldCount = EFYVLabyrinthConfig.Shared.UnitStep;
 
+                // Item #33 runtime-extensible asset fields: caps for custom
+                // fields registered through AssetSchemaService.RegisterAssetType
+                // (name + slot kind, no backend config edit). The values ride
+                // the .efyvlaby properties object as ordinary keys, so the name
+                // cap keeps them log- and JSON-friendly.
+                public const int MaxCustomFieldNameLength = 64;
+                public const int MaxCustomFieldsPerType = 32;
+
                 public static readonly string[] FacingChoices =
                 {
                     EFYVLabyrinthConfig.Shared.FacingUp,
@@ -786,12 +1083,47 @@ namespace EFYVBackend.Core.Data
                         EditorMetadata.Choice("Facing", EFYVLabyrinthConfig.Shared.FacingDown, true, FacingChoices))
                 };
 
+                // Prop/weapon gameplay numbers (#15): optional designer fields on the
+                // GameAssetData family, wired end to end through the shared
+                // Shared.AssetSchemaFieldManifest into AssetSchema block slots.
+                public static readonly FieldDefinition BaseDamageFieldDefinition =
+                    new FieldDefinition(
+                        EFYVLabyrinthConfig.Shared.BaseDamageField,
+                        Types.FloatSingle,
+                        EditorMetadata.Number("Base Damage", Types.DefaultFloat, Common.ZeroFloat, float.MaxValue, Common.UnitScale, false));
+
+                public static readonly FieldDefinition CooldownTimerFieldDefinition =
+                    new FieldDefinition(
+                        EFYVLabyrinthConfig.Shared.CooldownTimerField,
+                        Types.FloatSingle,
+                        EditorMetadata.Number("Cooldown Timer", Types.DefaultFloat, Common.ZeroFloat, float.MaxValue, 0.1d, false));
+
+                public static readonly FieldDefinition IsWalkableFieldDefinition =
+                    new FieldDefinition(
+                        EFYVLabyrinthConfig.Shared.IsWalkableField,
+                        Types.Int32,
+                        EditorMetadata.Number("Is Walkable (0/1)", DefaultIsWalkable, Common.ZeroFloat, Common.UnitScale, Common.UnitScale, false));
+
+                public static readonly FieldDefinition TrapDamageFieldDefinition =
+                    new FieldDefinition(
+                        EFYVLabyrinthConfig.Shared.TrapDamageField,
+                        Types.FloatSingle,
+                        EditorMetadata.Number("Trap Damage", Types.DefaultFloat, Common.ZeroFloat, float.MaxValue, Common.UnitScale, false));
+
+                // Newly authored props default to walkable, matching the runtime
+                // default (props are non-blocking unless a designer opts in).
+                public const int DefaultIsWalkable = EFYVLabyrinthConfig.Shared.UnitStep;
+
                 public static readonly FieldDefinition[] GameAssetFields =
                 {
                     new FieldDefinition(
                         EFYVLabyrinthConfig.Shared.AssetNameField,
                         Types.StringUpper,
-                        EditorMetadata.Text("Asset Name", Types.DefaultString, true))
+                        EditorMetadata.Text("Asset Name", Types.DefaultString, true)),
+                    BaseDamageFieldDefinition,
+                    CooldownTimerFieldDefinition,
+                    IsWalkableFieldDefinition,
+                    TrapDamageFieldDefinition
                 };
 
                 public static readonly FieldDefinition DamageToPlayerField =
@@ -864,6 +1196,40 @@ namespace EFYVBackend.Core.Data
                 public const float NeutralScrollDelta = Common.ZeroFloat;
             }
 
+            // Item #31 viewport designer overlays: host-agnostic defaults for
+            // the optional overlay passes of ViewportController's overlay
+            // RenderToScreenBuffer overloads. Colors are straight RGBA with
+            // red in the low byte (the PixelColor layout).
+            public static class Overlay
+            {
+                // Checkerboard transparency background (screen-anchored cells
+                // of edge 1 << CellShift, composited UNDER the canvas content
+                // inside the canvas area only). Moved into core from the
+                // Avalonia shell so every UI host renders the same backdrop.
+                public const uint CheckerLightRgba = 0xFF808080u;
+                public const uint CheckerDarkRgba = 0xFF5A5A5Au;
+                public const int DefaultCheckerCellShift = 3;
+                public const int MinCheckerCellShift = Common.EmptyCount;
+                public const int MaxCheckerCellShift = 15;
+                // Pixel grid: 1-screen-pixel lines on canvas pixel boundaries,
+                // drawn only at zoom >= the threshold (fine grids are noise at
+                // low zoom). White at ~31% alpha reads on light and dark art.
+                public const float DefaultPixelGridMinZoom = 4f;
+                public const uint PixelGridLineRgba = 0x50FFFFFFu;
+                // Tile grid: TileSize-cell boundaries when a tileset/map
+                // context is active (TileGridOverlayConfig.TileSize > 0).
+                // Amber at ~63% alpha, drawn over the pixel grid.
+                public const uint TileGridLineRgba = 0xA000D8FFu;
+                public const int InactiveTileSize = Common.EmptyCount;
+                // Attachment outlines (placed sub-element bounds) + pivot
+                // markers (sub-element pivot anchors and the optional
+                // host-supplied explicit pivot).
+                public const uint AttachmentOutlineRgba = 0xFFFF00FFu;
+                public const uint PivotMarkerRgba = 0xFF00A8FFu;
+                public const int DefaultPivotMarkerRadius = 3;
+                public const int MaxPivotMarkerRadius = 64;
+            }
+
             public static class Types
             {
                 public const string AssetTypeGameAssetData = EFYVLabyrinthConfig.Shared.GameAssetAssetType;
@@ -887,18 +1253,63 @@ namespace EFYVBackend.Core.Data
                 public const string DirRawArt = "RawArt";
                 public const string ExtensionEfyvSub = ".efyvsub";
                 public const string WildcardEfyvSub = "*.efyvsub";
+                // Item #6: per-project sub-element bank directory used by the
+                // editor shell (created next to the project files).
+                public const string AssetBankDirectoryName = "AssetBank";
                 public const int InitialFrameCount = Common.EmptyCount;
                 public const int InitialFrameIndex = Common.FirstIndex;
-                public const int AtlasDestinationY = Canvas.MinCoordinate;
                 public const float SubElementScale = Common.UnitScale;
                 public const int MaxAtlasDimension = 16384;
                 public const int MaxAtlasPixelCount = 67108864;
+                // Item #5 tile-sheet export: the single atlas animation the
+                // tileset .efyvlaby declares so Unity slices exactly tileCount
+                // sprites (fps is meaningless for a tile sheet but must be
+                // positive per the shared atlas contract).
+                public const string TilesetAnimationName = "Tiles";
+                public const int TilesetAnimationFps = 1;
+            }
+
+            // Item #5 designer-side tileset section: a grid of N tiles at
+            // TileSize, each authored as a mini-frame of raw RGBA pixels. The
+            // tile at list index i maps to FastGridMap short tile id i.
+            public static class Tileset
+            {
+                public const string DefaultName = "Tileset";
+                public const int MinTileSize = Tool.TileMaker.MinTileSize;
+                public const int MaxTileSize = Tool.TileMaker.MaxTileSize;
+                public const int DefaultTileSize = Tool.TileMaker.DefaultTileSize;
+                public const int MaxTiles = EFYVLabyrinthConfig.Backend.Exporter.MaxTilesPerTileset;
+                public const int MaxTileNameLength = EFYVLabyrinthConfig.Backend.Exporter.MaxTileNameLength;
+            }
+
+            // Item #5 designer-side map section: a short[] tile grid + prop
+            // placements + tileset reference, persisted in .efyvmake and
+            // exported as a versioned .efyvmap binary. The caps alias the
+            // Backend.MapFile wire limits so the designer model, .efyvmake
+            // persistence, and the binary export enforce one contract.
+            public static class MapDocument
+            {
+                public const string DefaultMapId = EFYVLabyrinthConfig.Game.Map.DefaultMapId;
+                public const int MaxDimension = EFYVLabyrinthConfig.Backend.MapFile.MaxMapDimension;
+                public const int MaxProps = EFYVLabyrinthConfig.Backend.MapFile.MaxMapProps;
+                public const short BlankTileId = EFYVLabyrinthConfig.Backend.MapFile.BlankTileId;
             }
 
             public static class Persistence
             {
                 public const int ProjectFormatVersion = EFYVLabyrinthConfig.Shared.UnitStep;
-                public const int SubElementFormatVersion = ProjectFormatVersion;
+                // Deliberately its own constant (#16a): a project-format bump must
+                // not silently invalidate every persisted .efyvsub bank.
+                // Item #6 made the split a REAL version scheme: version 2 appended
+                // the pivot + default-transform header fields, and readers accept
+                // the whole range [MinSupportedSubElementFormatVersion ..
+                // SubElementFormatVersion] instead of pinning one value - a
+                // version-1 bank file loads with the default pivot/transform.
+                public const int SubElementFormatVersion = 2;
+                public const int MinSupportedSubElementFormatVersion = 1;
+                // .efyvsub v2 flip flag bits (any other bit set is corrupt data).
+                public const byte SubElementFlagFlipX = 1;
+                public const byte SubElementFlagFlipY = 2;
                 public const string ProjectExtension = ".efyvmake";
                 public const string AutosaveSuffix = ".autosave";
                 public const int DefaultAutosaveDebounceMilliseconds = 1000;
@@ -925,6 +1336,41 @@ namespace EFYVBackend.Core.Data
                 public const string WalkAnimName = "Walk_Procedural";
                 public const string JitterAnimName = "Jitter_Procedural";
                 public const bool DefaultPreviewLoop = true;
+
+                // Item #10 animation workflow depth.
+                // Per-frame durations: 0 is the "inherit the animation FPS"
+                // sentinel everywhere (model, .efyvmake, .efyvlaby atlas); a
+                // positive value overrides that one frame's display time in
+                // milliseconds, bounded by the shared wire cap below.
+                public const int InheritFrameDurationMs =
+                    EFYVLabyrinthConfig.Backend.Exporter.InheritFrameDurationMs;
+                public const int MinFrameDurationMs = EFYVLabyrinthConfig.Shared.UnitStep;
+                public const int MaxFrameDurationMs =
+                    EFYVLabyrinthConfig.Backend.Exporter.MaxFrameDurationMs;
+                // Loop-range/ping-pong playback tags: LoopEnd of -1 means "the
+                // last frame" so appended frames extend the loop automatically.
+                public const int DefaultLoopStartFrame = Common.FirstIndex;
+                public const int FullRangeLoopEnd = Common.NotFoundIndex;
+                public const bool DefaultPingPong = false;
+                // Layer-preserving generators write onto (and regenerate only)
+                // the layer with this name, leaving manual touch-up layers alone.
+                public const string GeneratedLayerName = "Generated";
+                public const string BobAnimName = "Bob_Procedural";
+                public const string ShakeAnimName = "HitFlash_Procedural";
+                public const int BobDefaultFPS = 10;
+                public const int ShakeDefaultFPS = 20;
+            }
+
+            // Item #10 onion skinning: host-agnostic ghost-frame compositing
+            // defaults (ViewportController.ComposeOnionSkin).
+            public static class OnionSkin
+            {
+                public const int MaxNeighborFrames = 8;
+                public const int DefaultPreviousFrames = 1;
+                public const int DefaultNextFrames = 1;
+                public const float DefaultPreviousAlpha = 0.35f;
+                public const float DefaultNextAlpha = 0.2f;
+                public const float DefaultAlphaFalloff = 0.6f;
             }
 
             public static class Frame
@@ -947,6 +1393,34 @@ namespace EFYVBackend.Core.Data
                 public const int TransparentAlpha = EFYVLabyrinthConfig.Shared.TransparentAlpha;
             }
 
+            // Item #8 palette-and-color workflow: named palettes with ordered
+            // swatches plus a most-recent-first ring of recently used colors,
+            // both persisted in .efyvmake (optional document section - legacy
+            // documents without it restore to empty palette state).
+            public static class Palette
+            {
+                public const int MaxPalettes = 64;
+                public const int MaxSwatchesPerPalette = 256;
+                public const int MaxNameLength = 64;
+                public const int RecentColorCapacity = 16;
+                public const int DefaultActivePaletteIndex = Common.FirstIndex;
+            }
+
+            // Item #6 sub-element attachments: per-frame records placing a
+            // bank sub-element (by name) on the canvas. The wire caps alias
+            // the Backend.Exporter constants so the designer model, .efyvmake
+            // persistence, and the .efyvlaby exporter enforce one contract.
+            public static class Attachment
+            {
+                public const int MaxPerFrame = EFYVLabyrinthConfig.Backend.Exporter.MaxAttachmentsPerFrame;
+                public const int MinZOrder = EFYVLabyrinthConfig.Backend.Exporter.MinAttachmentZOrder;
+                public const int MaxZOrder = EFYVLabyrinthConfig.Backend.Exporter.MaxAttachmentZOrder;
+                public const int DefaultZOrder = Common.EmptyCount;
+                // Stamp tool grab tolerance (canvas pixels, per axis) when
+                // picking up an existing attachment to reposition it.
+                public const int GrabRadius = 4;
+            }
+
             public static class Tool
             {
                 public const int DefaultLayerIndex = Common.FirstIndex;
@@ -965,10 +1439,40 @@ namespace EFYVBackend.Core.Data
                     public const int CenterDivisorPower = 1;
                 }
 
+                public static class Eraser
+                {
+                    public const int DefaultBrushSize = Pencil.DefaultBrushSize;
+                    public const int MinThickBrushSize = Pencil.MinThickBrushSize;
+                    public const uint EraseRgba = EFYVLabyrinthConfig.Shared.TransparentRgba;
+                }
+
+                public static class Shape
+                {
+                    public const int DefaultThickness = Pencil.DefaultBrushSize;
+                    public const int MaxThickness = MaxBrushSize;
+                    public const bool DefaultFilled = false;
+                }
+
+                public static class Selection
+                {
+                    public const int MaxLassoPoints = 4096;
+                    public const int MinPolygonPoints = 3;
+                }
+
+                public static class Symmetry
+                {
+                    public const int VariantCount = 4;
+                    public const int FlipXBit = 1;
+                    public const int FlipYBit = 2;
+                }
+
                 public static class Moving
                 {
                     public const int ModeToonWalk = 0;
                     public const int ModeElementJitter = 1;
+                    // Item #10 movement presets beyond ToonWalk/ElementJitter.
+                    public const int ModeBobBreathe = 2;
+                    public const int ModeShakeHitFlash = 3;
                     public const int DefaultWalkSplitY = 32;
                     public const float DefaultWalkBounceAmp = 2f;
                     public const float DefaultWalkStrideAmp = 4f;
@@ -977,6 +1481,12 @@ namespace EFYVBackend.Core.Data
                     public const float DefaultJitterAmp = 1.5f;
                     public const float DefaultJitterFreq = Common.UnitScale;
                     public const int DefaultJitterFrameCount = 8;
+                    public const float DefaultBobAmp = 1.5f;
+                    public const float DefaultBreatheAmp = 0.05f;
+                    public const int DefaultBobFrameCount = 8;
+                    public const float DefaultShakeAmp = 2f;
+                    public const float DefaultFlashStrength = 0.6f;
+                    public const int DefaultShakeFrameCount = 6;
                 }
 
                 public static class TileMaker
@@ -1013,6 +1523,49 @@ namespace EFYVBackend.Core.Data
                 public const int EstimatedCommandOverheadBytes = 256;
             }
 
+            // Item #7 destructive layer filters: session-level parameter caps
+            // and the host-facing filter catalog labels (ToolbarAPI).
+            public static class Filter
+            {
+                public const int MinBlurRadius = EFYVLabyrinthConfig.Shared.UnitStep;
+                public const int MaxBlurRadius = 64;
+                // Glow radius 0 is legal: it leaves a hard 1px rim behind the
+                // sprite instead of a soft halo.
+                public const int MinGlowRadius = Common.EmptyCount;
+                public const int MaxGlowRadius = MaxBlurRadius;
+                // Saturation/value deltas live on the normalized channel scale.
+                public const float MinColorComponentDelta = -Common.UnitScale;
+                public const float MaxColorComponentDelta = Common.UnitScale;
+                public const string LabelBlur = "Blur";
+                public const string LabelOutline = "Outline";
+                public const string LabelGlow = "Glow";
+                public const string LabelColorShift = "Color Shift";
+            }
+
+            // Item #7 runtime-effect descriptor authoring (designer model
+            // caps; the wire-format value bounds live in Backend.Exporter).
+            public static class Effect
+            {
+                public const int MaxEffectsPerAnimation =
+                    EFYVLabyrinthConfig.Backend.Exporter.MaxEffectsPerAnimation;
+                public const int MinDurationMs =
+                    EFYVLabyrinthConfig.Backend.Exporter.MinEffectDurationMs;
+                public const int MaxDurationMs =
+                    EFYVLabyrinthConfig.Backend.Exporter.MaxEffectDurationMs;
+                public const float MinStrength =
+                    EFYVLabyrinthConfig.Backend.Exporter.MinEffectStrength;
+                public const float MaxStrength =
+                    EFYVLabyrinthConfig.Backend.Exporter.MaxEffectStrength;
+                public const int MaxNameLength = 64;
+                public const int MaxTriggerLength = 64;
+                public const string TypeFlash = EFYVLabyrinthConfig.Backend.Exporter.EffectTypeFlash;
+                public const string TypeTint = EFYVLabyrinthConfig.Backend.Exporter.EffectTypeTint;
+                public const string TypeParticleHook =
+                    EFYVLabyrinthConfig.Backend.Exporter.EffectTypeParticleHook;
+                public const string TriggerOnSpawn = EFYVLabyrinthConfig.Shared.EffectTriggerOnSpawn;
+                public const string TriggerOnDamaged = EFYVLabyrinthConfig.Shared.EffectTriggerOnDamaged;
+            }
+
             public static class Entity
             {
                 public const int DirectionalVariantCount = 4;
@@ -1030,6 +1583,9 @@ namespace EFYVBackend.Core.Data
                 public const string FileSuffixDown = EFYVLabyrinthConfig.Shared.FacingFileSuffixDown;
                 public const string FileSuffixLeft = EFYVLabyrinthConfig.Shared.FacingFileSuffixLeft;
                 public const string FileSuffixRight = EFYVLabyrinthConfig.Shared.FacingFileSuffixRight;
+                // Item #33 linked directional authoring: the facing a linked
+                // 4-direction project starts on (matches Game.Entity.InitialFacing).
+                public const string DefaultActiveFacing = FacingDown;
             }
         }
 
@@ -1040,6 +1596,8 @@ namespace EFYVBackend.Core.Data
                 public const string FieldEntityName = EFYVLabyrinthConfig.Shared.EntityNameField;
                 public const string FieldAssetName = EFYVLabyrinthConfig.Shared.AssetNameField;
                 public const string FieldAssetType = EFYVLabyrinthConfig.Shared.AssetTypeField;
+                public const string FieldDocumentVersion = "documentVersion";
+                public const string FieldBaseAssetType = "baseAssetType";
                 public const string FieldProperties = "properties";
                 public const string FieldHitboxes = "hitboxes";
                 public const string FieldFrameIndex = "frameIndex";
@@ -1059,6 +1617,75 @@ namespace EFYVBackend.Core.Data
                 public const string FieldFps = "fps";
                 public const string FieldStartFrame = "startFrame";
                 public const string FieldFrameCount = "frameCount";
+                // Item #10 optional atlas-animation timing/playback fields. All
+                // four are OMITTED when they hold their defaults, so documents
+                // that do not use the features stay byte-identical and readers
+                // fall back to fps / the full frame range.
+                public const string FieldFrameDurationsMs = "frameDurationsMs";
+                public const string FieldLoopStart = "loopStart";
+                public const string FieldLoopEnd = "loopEnd";
+                public const string FieldPingPong = "pingPong";
+                // Wire-format bounds for frameDurationsMs entries: 0 is the
+                // "inherit fps" sentinel; positive values are milliseconds.
+                public const int InheritFrameDurationMs = EFYVLabyrinthConfig.Shared.EmptyCount;
+                public const int MaxFrameDurationMs = 60000;
+                // Item #7 OPTIONAL per-animation runtime-effect descriptors
+                // (documentVersion 3). Each entry inside an atlas animation's
+                // "effects" array is {name, effectType, trigger} plus optional
+                // {colorRgba, durationMs, strength}; absent optionals resolve
+                // to the Default* values below. effectType must be one of the
+                // EffectType* strings; particleHook additionally requires a
+                // non-empty name (it identifies the particle system to spawn).
+                public const string FieldEffects = "effects";
+                public const string FieldEffectType = "effectType";
+                public const string FieldTrigger = "trigger";
+                public const string FieldColorRgba = "colorRgba";
+                public const string FieldDurationMs = "durationMs";
+                public const string FieldStrength = "strength";
+                public const string EffectTypeFlash = "flash";
+                public const string EffectTypeTint = "tint";
+                public const string EffectTypeParticleHook = "particleHook";
+                public const int MaxEffectsPerAnimation = 32;
+                // Item #6 OPTIONAL top-level sub-element attachment records
+                // (documentVersion 4). The array sits NEXT TO "hitboxes" (same
+                // frame-indexed shape) and is OMITTED entirely when no frame
+                // carries an attachment, so attachment-free documents stay
+                // byte-identical to version-3 output. Each entry is
+                // {frameIndex, subElement, x, y, zOrder} plus optional
+                // {flipX, flipY} (absent means false). x/y is the canvas-space
+                // position of the sub-element's PIVOT; the attachment pixels
+                // are ALSO flattened into the atlas at export time, so these
+                // records exist for future dynamic consumers (the runtime
+                // stores them; rendering from them is deferred).
+                public const string FieldAttachments = "attachments";
+                public const string FieldSubElement = "subElement";
+                public const string FieldZOrder = "zOrder";
+                public const string FieldFlipX = "flipX";
+                public const string FieldFlipY = "flipY";
+                // Item #5 OPTIONAL top-level tileset manifest block
+                // (documentVersion 5). Present only on tile-sheet exports; the
+                // member is OMITTED entirely on every other document, so
+                // non-tileset output stays byte-identical to version-4 output.
+                // The block is {tileSize, tiles:[name,...]} where the tile at
+                // list index i carries FastGridMap short tile id i - the
+                // tile-ID manifest mapping designed tiles to runtime ids. When
+                // an atlas block rides alongside, its frameWidth/frameHeight
+                // must equal tileSize and the tile count must fit the sheet.
+                public const string FieldTileset = "tileset";
+                public const string FieldTileSize = "tileSize";
+                public const string FieldTiles = "tiles";
+                public const int MaxTilesPerTileset = 256;
+                public const int MaxTileNameLength = 64;
+                public const int MaxAttachmentsPerFrame = 64;
+                public const int MinAttachmentZOrder = -1024;
+                public const int MaxAttachmentZOrder = 1024;
+                public const int MinEffectDurationMs = EFYVLabyrinthConfig.Shared.EmptyCount;
+                public const int MaxEffectDurationMs = MaxFrameDurationMs;
+                public const float MinEffectStrength = EFYVLabyrinthConfig.Shared.NormalizedMin;
+                public const float MaxEffectStrength = EFYVLabyrinthConfig.Shared.NormalizedMax;
+                public const uint DefaultEffectColorRgba = 0xFFFFFFFFu;
+                public const int DefaultEffectDurationMs = MinEffectDurationMs;
+                public const float DefaultEffectStrength = MaxEffectStrength;
                 public const string ExportSuffix = "_Export";
                 public const string EfyvExtension = EFYVLabyrinthConfig.Shared.EfyvExtension;
                 public const string PngExtension = EFYVLabyrinthConfig.Shared.PngExtension;
@@ -1078,6 +1705,21 @@ namespace EFYVBackend.Core.Data
                 public const string TemporaryExtension = ".tmp";
                 public const string CompactGuidFormat = "N";
                 public const int CurrentFormatVersion = 1;
+                // Top-level .efyvlaby document version (#16a). Files written before
+                // the field existed are read as LegacyDocumentVersion. Version 2
+                // (item #10) added the OPTIONAL atlas-animation timing/playback
+                // fields above; version 3 (item #7) added the OPTIONAL per-
+                // animation runtime-effect descriptors; version 4 (item #6)
+                // added the OPTIONAL top-level sub-element attachment records;
+                // version 5 (item #5) added the OPTIONAL top-level tileset
+                // manifest block. Importers accept the whole supported range
+                // [MinSupportedDocumentVersion .. CurrentDocumentVersion]
+                // instead of pinning one value, because every addition so far
+                // is backward-compatible (old fields keep their meaning, new
+                // fields are optional with defaults).
+                public const int CurrentDocumentVersion = 5;
+                public const int MinSupportedDocumentVersion = 1;
+                public const int LegacyDocumentVersion = 1;
 
                 public static class Png
                 {
@@ -1121,6 +1763,57 @@ namespace EFYVBackend.Core.Data
                 public const int DefaultFileStreamBufferSize = 4096;
                 public const int InitialReadOffset = 0;
                 public const int EndOfStreamReadCount = InitialReadOffset;
+                // Longest stem accepted anywhere in the system. Exporters decorate
+                // stems with facing suffixes, extensions, and dotted temporary names
+                // (prefix + 32-char GUID + ".tmp"), so the cap leaves ample headroom
+                // under the 255-character filename component limit shared by Windows
+                // and common Unix filesystems.
+                public const int MaxFileStemLength = 128;
+
+                // Bounded retry (#12) around File.Replace/Move publishes: Unity (or
+                // an antivirus scanner) briefly holding the destination makes the
+                // swap sporadically fail with a sharing violation.
+                public const int PublishRetryAttempts = 3;
+                public const int PublishRetryFirstDelayMilliseconds = 20;
+                public const int PublishRetryMaxDelayMilliseconds = 50;
+            }
+
+            public static class Save
+            {
+                // FastSaveEngine on-disk envelope (#19): {magic, version, CRC32}
+                // little-endian header followed by the raw PlayerMetaSchema bytes.
+                public const uint MagicNumber = 0x56594645u; // "EFYV" as little-endian bytes
+                public const int FormatVersion = 1;
+                public const int MagicOffset = 0;
+                public const int VersionOffset = 4;
+                public const int ChecksumOffset = 8;
+                public const int HeaderSizeBytes = 12;
+            }
+
+            // Item #5 versioned binary map container (.efyvmap): the same
+            // {magic, version, CRC32} little-endian envelope the save engine
+            // uses, followed by the map payload (dimensions, tileset
+            // reference, row-major int16 tile ids, prop placements). Written
+            // by FastMapExporter through the atomic-publish machinery and read
+            // back by FastMapImporter.TryParse (tri-state, like FastImporter).
+            public static class MapFile
+            {
+                public const string Extension = ".efyvmap";
+                public const uint MagicNumber = 0x4D594645u; // "EFYM" as little-endian bytes
+                public const int FormatVersion = 1;
+                public const int MagicOffset = 0;
+                public const int VersionOffset = 4;
+                public const int ChecksumOffset = 8;
+                public const int HeaderSizeBytes = 12;
+                public const int MaxMapDimension = 4096;
+                public const int MaxMapProps = 4096;
+                public const int BytesPerTile = 2;
+                // The designer's "no tile here" cell id. Distinct from
+                // Collections.EmptyTileId (0), which is a REAL first-palette
+                // tile at runtime: the game blanks any id below
+                // Game.Map.MinimumTileId, so blank designer cells render as
+                // empty space instead of aliasing palette entry 0.
+                public const short BlankTileId = -1;
             }
 
             public static class Collections
@@ -1177,6 +1870,11 @@ namespace EFYVBackend.Core.Data
                 public const float BounceFrequencyMultiplier = 2f;
                 public const float NormalizedCycle = Math.NormalizedMax;
                 public const int OctantCount = EFYVLabyrinthConfig.Shared.DirectionOctantCount;
+                // Item #10 presets. Shake runs this many full oscillations over
+                // one normalized cycle; breathe amplitude is capped so the
+                // vertical scale factor 1 + wave * amplitude can never reach 0.
+                public const float ShakeOscillations = 3f;
+                public const float MaxBreatheAmplitude = 0.9f;
                 public const int PackedOctantLookup = 0xB374C8;
                 public const int BitsPerOctant = 3;
                 public const int OctantMask = 7;
@@ -1194,6 +1892,22 @@ namespace EFYVBackend.Core.Data
                 public const uint InvalidSeed = Serialization.FalseValue;
                 public const uint FallbackSeed = Serialization.TrueValue;
                 public const float UIntToUnitFloat = 2.3283064365386963e-10f;
+            }
+
+            // Item #7 destructive filter primitives (FastEffects outline, glow,
+            // and HSV color shift).
+            public static class Effects
+            {
+                // Outline expands the opaque silhouette by exactly one pixel in
+                // the 8-neighborhood (diagonals included, so diagonal edges get
+                // an unbroken rim).
+                public const int OutlineExpandRadius = EFYVLabyrinthConfig.Shared.UnitStep;
+                // Classic hexcone HSV: hue in degrees over six 60-degree
+                // sectors; the parity modulus folds a sector position onto the
+                // descending half of the chroma ramp.
+                public const float HueFullCircleDegrees = 360f;
+                public const float HueSectorDegrees = 60f;
+                public const float HueSectorParityModulus = 2f;
             }
 
             public static class Pixel

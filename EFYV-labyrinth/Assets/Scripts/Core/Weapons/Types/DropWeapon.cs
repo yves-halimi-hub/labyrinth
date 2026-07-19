@@ -27,6 +27,11 @@ namespace EFYV.Core.Weapons.Types
             base.Awake();
             damageRadius = GameConfig.Weapons.Drop.DefaultDamageRadius;
             dropCount = GameConfig.Weapons.Drop.DefaultCount;
+
+            // #32: fill the VFX pool up-front so the first drop never hitches
+            // on Instantiate. No-op without a prefab or PoolManager;
+            // populate-up-to-target keeps repeated grants idempotent.
+            Managers.PoolManager.TryPrewarmGameObject(bombVisualPrefab, GameConfig.Pool.WeaponVfxPrewarmCount);
         }
 
         public override void Fire()
@@ -52,11 +57,12 @@ namespace EFYV.Core.Weapons.Types
                     GameObject vfx = Managers.PoolManager.Instance.SpawnGameObject(bombVisualPrefab, dropPoint, Quaternion.identity);
                     if (vfx != null)
                     {
-                        Managers.PoolManager.Instance.DespawnGameObject(vfx, bombVisualPrefab.GetInstanceID(), GameConfig.Weapons.Drop.VfxLifetime);
+                        Managers.PoolManager.Instance.DespawnGameObject(vfx, Managers.PoolManager.GetPoolKey(bombVisualPrefab), GameConfig.Weapons.Drop.VfxLifetime);
                     }
                 }
 
-                Enemy.ApplyDamageInRadius(dropPoint, sqrDamageRadius, BaseDamage);
+                // Faction-aware radius damage around each drop point.
+                DamageTargetsInRadius(dropPoint, sqrDamageRadius, BaseDamage);
             }
         }
     }

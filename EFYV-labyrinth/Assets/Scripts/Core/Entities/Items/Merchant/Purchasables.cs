@@ -72,9 +72,13 @@ namespace EFYV.Core.Entities.Items.Merchant
             Duration = duration;
         }
 
+        // #34: applies a REAL timed buff - registered on the player, ticked
+        // centrally in PlayerController.Update, reverted on expiry. Unknown buff
+        // ids return false so the merchant refunds the purchase.
         public override bool Apply(PlayerController player)
         {
-            // Buff system isn't fully implemented yet, but we apply it locally via a mock Log for now
+            if (player == null || !player.ApplyTimedBuff(BuffId, Duration)) return false;
+
             Debug.LogFormat(GameConfig.Merchant.LogBuffApplied, BuffId, Duration);
             return true;
         }

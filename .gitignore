@@ -16,6 +16,12 @@ EFYV-labyrinth/[Uu]ser[Ss]ettings/
 EFYV-labyrinth/[Bb]uild/
 EFYV-labyrinth/[Bb]uilds/
 EFYV-labyrinth/MemoryCaptures/
+# Unity IDE integration output (regenerated per machine)
+EFYV-labyrinth/*.csproj
+EFYV-labyrinth/*.sln
+EFYV-labyrinth/*.slnx
+EFYV-labyrinth/.vsconfig
+EFYV-labyrinth/crashlytics-build.properties
 
 # Local IDE and OS state
 .idea/

@@ -164,7 +164,14 @@ namespace EFYVBackend.Core.Data
         JitterFrameCount = 5,
         JitterAmplitudesStart = 6, // 8 slots
         JitterFrequenciesStart = 14, // 8 slots
-        SIZE = 22
+        // Item #10 preset gauges (bob/breathe + shake/hit-flash).
+        BobAmplitude = 22,
+        BreatheAmplitude = 23,
+        BobFrameCount = 24,
+        ShakeAmplitude = 25,
+        FlashStrength = 26,
+        ShakeFrameCount = 27,
+        SIZE = 28
     }
 
     public enum BrushToolSchema : int
@@ -326,13 +333,21 @@ namespace EFYVBackend.Core.Data
     {
         StateNameHash = 0,
         FPS = 1,
-        SIZE = 2
+        // Item #10 playback tags: loop range (LoopEndFrame -1 = last frame)
+        // and ping-pong flag. See EFYVLabyrinthConfig.LabyMake.Animation.
+        LoopStartFrame = 2,
+        LoopEndFrame = 3,
+        PingPong = 4,
+        SIZE = 5
     }
 
     public enum FrameSchema : int
     {
         FrameIndex = 0,
-        SIZE = 1
+        // Item #10 per-frame duration override in milliseconds; 0 inherits the
+        // owning animation's FPS.
+        DurationMs = 1,
+        SIZE = 2
     }
 
     public enum SubElementSchema : int
@@ -368,15 +383,34 @@ namespace EFYVBackend.Core.Data
     public unsafe struct PlayerMetaSchema
     {
         public int TotalCoinsCollected;
-        
+
         // Account Legacy Stats
-        public FastSchemaBlock LegacyStats; 
-        
+        public FastSchemaBlock LegacyStats;
+
         // Account Achievements (256-bit mask)
         public FastSchemaBlock LegacyAchievements;
-        
+
         public const int MaxToons = BackendConfig.Schema.MaxToons;
-        
+
+        // The exact byte size this struct must marshal to: the save envelope and
+        // the ToonBlocks stride math below both depend on it.
+        public const int ExpectedSizeBytes =
+            sizeof(int) + (2 + MaxToons) * BackendConfig.Schema.BlockSizeBytes;
+
+        // Static size assert: the fixed ToonBlocks buffer strides by
+        // BackendConfig.Schema.BlockSizeBytes, so a FastSchemaBlock (or profile)
+        // whose real size drifts from the config constant would silently corrupt
+        // every toon block read/write. Fail loudly at type initialization instead.
+        static PlayerMetaSchema()
+        {
+            if (sizeof(FastSchemaBlock) != BackendConfig.Schema.BlockSizeBytes ||
+                sizeof(PlayerMetaSchema) != ExpectedSizeBytes)
+            {
+                throw new System.InvalidOperationException(
+                    "PlayerMetaSchema layout drifted from BackendConfig.Schema constants.");
+            }
+        }
+
         // Contiguous blocks for each toon; capacity and stride come from BackendConfig.Schema.
         public fixed byte ToonBlocks[MaxToons * BackendConfig.Schema.BlockSizeBytes];
 

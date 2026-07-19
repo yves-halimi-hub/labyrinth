@@ -29,13 +29,32 @@ namespace EFYV.Core.Weapons.Types
 
         public override void Fire()
         {
+            float sqrRange = attackRange * attackRange;
+            Vector3 myPos = transform.position;
+            // Time-scaled knockback uses the driving tick's deltaTime, never the
+            // global clock, so custom-dt drivers stay in sync with rotation/damage.
+            float knockbackStep = knockbackForce * TickDeltaTime;
+
+            // Faction-aware: an enemy-held melee weapon swings at the player only.
+            if (OwnerFaction == Faction.Enemy)
+            {
+                PlayerController player = PlayerController.Instance;
+                if (player == null || player.IsDead) return;
+                if (player.entityTransform.position.FastSqrDistance(myPos) <= sqrRange)
+                {
+                    Vector3 playerOffset = player.entityTransform.position - myPos;
+                    player.TakeDamage(BaseDamage);
+                    if (!player.IsDead)
+                    {
+                        player.entityTransform.position += playerOffset.normalized * knockbackStep;
+                    }
+                }
+                return;
+            }
+
             // PERFORMANCE: O(1) Spatial Hashing or broad-phase array check
             // For now, doing a squared-distance array iteration
             var activeEnemies = Enemy.ActiveEnemies;
-            float sqrRange = attackRange * attackRange;
-            Vector3 myPos = transform.position;
-            float knockbackStep = knockbackForce * Time.deltaTime;
-
             for (int i = activeEnemies.Count - 1; i >= 0; i--)
             {
                 var enemy = activeEnemies[i];

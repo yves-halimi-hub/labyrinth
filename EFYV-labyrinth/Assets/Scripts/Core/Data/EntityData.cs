@@ -1,8 +1,75 @@
 using UnityEngine;
 using GameConfig = EFYVBackend.Core.Data.EFYVLabyrinthConfig.Game;
+using SharedConfig = EFYVBackend.Core.Data.EFYVLabyrinthConfig.Shared;
 
 namespace EFYV.Core.Data
 {
+    // Item #14: the single source for converting an authored (pixel-space)
+    // hitbox rectangle into the entity's local Unity units. Hoisted here from
+    // EFYVHitboxGizmo so BOTH the editor gizmo overlay and the runtime
+    // BoxCollider2D sync (LivingEntity) share one implementation instead of
+    // duplicating the pivot math. The bounds are laid out around the sprite
+    // pivot (center of the frame) with Unity's Y axis pointing up, mirroring
+    // how EFYVPixelArtImporter pivots each sliced frame.
+    public static class EntityHitboxGeometry
+    {
+        public static bool TryGetLocalBounds(
+            EntityAtlasMetadata atlas,
+            Rect authoredBounds,
+            out Vector3 center,
+            out Vector3 size)
+        {
+            center = default;
+            size = default;
+            if (atlas.FrameWidth <= GameConfig.Runtime.EmptyCollectionCount ||
+                atlas.FrameHeight <= GameConfig.Runtime.EmptyCollectionCount ||
+                SharedConfig.PixelsPerUnit <= GameConfig.Runtime.EmptyCollectionCount ||
+                authoredBounds.width <= GameConfig.Runtime.EmptyCollectionCount ||
+                authoredBounds.height <= GameConfig.Runtime.EmptyCollectionCount ||
+                !IsFinite(authoredBounds.x) ||
+                !IsFinite(authoredBounds.y) ||
+                !IsFinite(authoredBounds.width) ||
+                !IsFinite(authoredBounds.height))
+                return false;
+
+            float frameWidth = atlas.FrameWidth / SharedConfig.PixelsPerUnit;
+            float frameHeight = atlas.FrameHeight / SharedConfig.PixelsPerUnit;
+            float pivot = GameConfig.Importer.SpritePivotNormalized;
+            center = new Vector3(
+                authoredBounds.x + (authoredBounds.width * pivot) - (frameWidth * pivot),
+                (frameHeight * pivot) - authoredBounds.y - (authoredBounds.height * pivot),
+                GameConfig.Runtime.EmptyCollectionCount);
+            size = new Vector3(
+                authoredBounds.width,
+                authoredBounds.height,
+                GameConfig.Runtime.EmptyCollectionCount);
+            return true;
+        }
+
+        private static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
+        }
+    }
+    // Item #7: one authored runtime-effect descriptor imported from the
+    // .efyvlaby atlas animation block (name + params + trigger tag).
+    // EffectType is "flash"/"tint"/"particleHook" (see the shared config's
+    // Backend.Exporter.EffectType* strings); Trigger is the runtime seam tag
+    // ("OnSpawn"/"OnDamaged" or a custom tag). Flash and tint are interpreted
+    // by LivingEntity against the SpriteRenderer color; particleHook is
+    // STORED but its interpretation is deferred until a particle pipeline
+    // exists (Name identifies the particle system to spawn).
+    [System.Serializable]
+    public struct EntityEffectDescriptor
+    {
+        public string Name;
+        public string EffectType;
+        public string Trigger;
+        public uint ColorRgba;
+        public int DurationMs;
+        public float Strength;
+    }
+
     [System.Serializable]
     public struct EntityAnimationMetadata
     {
@@ -10,6 +77,19 @@ namespace EFYV.Core.Data
         public int FramesPerSecond;
         public int StartFrame;
         public int FrameCount;
+        // Item #10 timing/playback data from the .efyvlaby atlas block.
+        // FrameDurationsMs is null/empty when the designer did not override any
+        // frame (play at FramesPerSecond); when present it has FrameCount
+        // entries and an entry of 0 means "inherit FramesPerSecond" for that
+        // frame. Loop frames are animation-local indices; PingPong bounces
+        // playback between them.
+        public int[] FrameDurationsMs;
+        public int LoopStartFrame;
+        public int LoopEndFrame;
+        public bool PingPong;
+        // Item #7 authored effect descriptors; null/empty when the animation
+        // carries none.
+        public EntityEffectDescriptor[] Effects;
     }
 
     [System.Serializable]
@@ -31,6 +111,25 @@ namespace EFYV.Core.Data
         public Rect Bounds;
     }
 
+    // Item #6: one sub-element attachment record imported from the .efyvlaby
+    // top-level "attachments" array. FrameIndex is the global atlas frame,
+    // SubElementName names the designer-bank sub-element, and X/Y is the
+    // designer-canvas pixel position of that sub-element's pivot. The
+    // attachment pixels are ALREADY flattened into the imported atlas; these
+    // records are STORED for future dynamic sub-element rendering, which is
+    // deferred until a sprite pipeline for bank sub-elements exists.
+    [System.Serializable]
+    public struct EntityAttachmentRecord
+    {
+        public int FrameIndex;
+        public string SubElementName;
+        public int X;
+        public int Y;
+        public int ZOrder;
+        public bool FlipX;
+        public bool FlipY;
+    }
+
     [System.Serializable]
     public struct EntityFacingImportData
     {
@@ -41,9 +140,13 @@ namespace EFYV.Core.Data
         public Sprite[] Frames => frames;
         public EntityAtlasMetadata AtlasMetadata => atlasMetadata;
         public EntityHitboxRecord[] Hitboxes => hitboxes;
+        // Metadata counts as imported data only when it describes a real frame:
+        // BOTH dimensions must be positive (a width-only or height-only atlas is
+        // torn data, not a usable import).
         public bool HasImportedData =>
             (frames != null && frames.Length > GameConfig.Runtime.EmptyCollectionCount) ||
-            atlasMetadata.FrameWidth > GameConfig.Runtime.EmptyCollectionCount ||
+            (atlasMetadata.FrameWidth > GameConfig.Runtime.EmptyCollectionCount &&
+                atlasMetadata.FrameHeight > GameConfig.Runtime.EmptyCollectionCount) ||
             (hitboxes != null && hitboxes.Length > GameConfig.Runtime.EmptyCollectionCount);
 
         public EntityFacingImportData(

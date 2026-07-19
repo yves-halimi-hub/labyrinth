@@ -12,6 +12,9 @@ namespace EFYV.Core.Entities.Environment
         public GameAssetData SourceData => assetData;
 
         [Header(GameConfig.DataConfig.HeaderPropSettings)]
+        // Fallback for hand-placed props without designer data; when assetData is
+        // present the imported IsWalkable schema slot drives blocking instead
+        // (see ApplySourceData), so the designer value survives live refreshes.
         [SerializeField] private bool serializedIsBlocking = GameConfig.EnvironmentData.NonBlocking;
         public bool IsBlocking
         {
@@ -22,18 +25,44 @@ namespace EFYV.Core.Entities.Environment
                 Data.Block.SetInt((int)EFYVBackend.Core.Data.EntitySchema.IsBlocking, value ? BackendConfig.Serialization.TrueValue : BackendConfig.Serialization.FalseValue);
             }
         }
+
+        // Designer-authored gameplay values (#15), read from the imported asset's
+        // schema block (AssetSchema slots written by EFYVPixelArtImporter).
+        public bool IsWalkable =>
+            assetData != null
+                ? assetData.GetSchemaBlock().GetInt((int)EFYVBackend.Core.Data.AssetSchema.IsWalkable) ==
+                    BackendConfig.Serialization.TrueValue
+                : !IsBlocking;
+
+        public float TrapDamage =>
+            assetData != null
+                ? assetData.GetSchemaBlock().GetFloat((int)EFYVBackend.Core.Data.AssetSchema.TrapDamage)
+                : GameConfig.Runtime.UnitIntervalMin;
         
         [Header(GameConfig.DataConfig.HeaderAnimationSettings)]
         public Sprite[] animationFrames;
         [SerializeField] private float serializedAnimationSpeed = GameConfig.EnvironmentData.DefaultAnimationSpeed;
+
+        // Documented floor for the per-frame animation interval (value and rationale
+        // live in EFYV-LabyrinthConfig.cs). Zero, negative, or NaN speeds would
+        // otherwise thrash the frame every tick and invert the OnSpawn timer
+        // randomization range.
+        public const float MinimumAnimationSpeed = GameConfig.EnvironmentData.MinimumAnimationSpeed;
+
         public float animationSpeed
         {
             get => Data.Block.GetFloat((int)EFYVBackend.Core.Data.EntitySchema.AnimationSpeed);
             set
             {
-                serializedAnimationSpeed = value;
-                Data.Block.SetFloat((int)EFYVBackend.Core.Data.EntitySchema.AnimationSpeed, value);
+                float sanitized = SanitizeAnimationSpeed(value);
+                serializedAnimationSpeed = sanitized;
+                Data.Block.SetFloat((int)EFYVBackend.Core.Data.EntitySchema.AnimationSpeed, sanitized);
             }
+        }
+
+        private static float SanitizeAnimationSpeed(float value)
+        {
+            return float.IsNaN(value) || value < MinimumAnimationSpeed ? MinimumAnimationSpeed : value;
         }
         
         protected float animTimer 
@@ -77,6 +106,7 @@ namespace EFYV.Core.Entities.Environment
             Data.Block.SetInt(
                 (int)EFYVBackend.Core.Data.EntitySchema.IsBlocking,
                 serializedIsBlocking ? BackendConfig.Serialization.TrueValue : BackendConfig.Serialization.FalseValue);
+            serializedAnimationSpeed = SanitizeAnimationSpeed(serializedAnimationSpeed);
             Data.Block.SetFloat((int)EFYVBackend.Core.Data.EntitySchema.AnimationSpeed, serializedAnimationSpeed);
         }
 
@@ -93,7 +123,24 @@ namespace EFYV.Core.Entities.Environment
 
         private void ApplySourceData()
         {
-            if (assetData != null && spriteRenderer != null) spriteRenderer.sprite = assetData.sprite;
+            if (assetData == null) return;
+            if (spriteRenderer != null) spriteRenderer.sprite = assetData.sprite;
+            // Item #13: an imported multi-frame sheet supplies the animation
+            // frames, replacing the hand-authored inspector array; a single-
+            // sprite import (ImportedFrames null) leaves the inspector array.
+            Sprite[] importedFrames = assetData.ImportedFrames;
+            if (importedFrames != null && importedFrames.Length > GameConfig.Runtime.EmptyCollectionCount)
+            {
+                animationFrames = importedFrames;
+            }
+            // The designer's IsWalkable schema slot replaces the disconnected
+            // inspector bool as the source of blocking for data-driven props.
+            Data.Block.SetInt(
+                (int)EFYVBackend.Core.Data.EntitySchema.IsBlocking,
+                assetData.GetSchemaBlock().GetInt((int)EFYVBackend.Core.Data.AssetSchema.IsWalkable) ==
+                    BackendConfig.Serialization.TrueValue
+                    ? BackendConfig.Serialization.FalseValue
+                    : BackendConfig.Serialization.TrueValue);
         }
 
         // Global strictly-packed memory array for blazing fast animation updates

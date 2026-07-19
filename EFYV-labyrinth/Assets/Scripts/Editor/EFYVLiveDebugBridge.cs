@@ -12,9 +12,25 @@ namespace EFYV.Editor
         private static readonly HashSet<SchemaBackedAssetData> PendingAssets = new HashSet<SchemaBackedAssetData>();
         private static bool applyScheduled;
 
+        // Item #4: the seam the debug spawn palette hooks to auto-offer the
+        // newest import. LastRefreshedAsset records the most recently imported
+        // or refreshed asset (in edit mode as well as Play Mode, since a spawn
+        // candidate can be imported before play starts), and RefreshVersion
+        // increments on every refresh so the window can cheaply poll for
+        // "something changed" without wiring an event.
+        internal static SchemaBackedAssetData LastRefreshedAsset { get; private set; }
+        internal static int RefreshVersion { get; private set; }
+
         public static void QueueRefresh(SchemaBackedAssetData data)
         {
-            if (!EditorApplication.isPlaying || data == null) return;
+            if (data == null) return;
+
+            // Record the newest import for the spawn palette regardless of play
+            // state; the scene-entity refresh below still only runs in Play Mode.
+            LastRefreshedAsset = data;
+            RefreshVersion++;
+
+            if (!EditorApplication.isPlaying) return;
 
             PendingAssets.Add(data);
             if (applyScheduled) return;

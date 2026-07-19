@@ -404,9 +404,12 @@ internal static partial class Program
         ObserveIssues(observed, result);
         RequireMatrixIssue(result, ProjectIssueCode.LayerLimitExceeded);
 
+        // Grid-atlas budget (batch-1 layout): 17 frames of a 4096-wide canvas
+        // need 5 grid columns -> 20480px atlas width, over MaxAtlasDimension.
+        // (The retired single-row model flagged this at just 5 frames.)
         project = CreateValidatorProject(Config.Types.AssetTypeEnemyData, 4096, 1);
         onePixelFrame = project.Animations[0].Frames[0];
-        for (int index = 1; index < 5; index++)
+        for (int index = 1; index < 17; index++)
             project.Animations[0].Frames.Add(onePixelFrame);
         result = validator.Validate(project);
         ObserveIssues(observed, result);
@@ -436,6 +439,45 @@ internal static partial class Program
         result = validator.Validate(project);
         ObserveIssues(observed, result);
         RequireMatrixIssue(result, ProjectIssueCode.InvalidFrameRate);
+
+        // batch3.4 agent (item #7): authored effect descriptor issues.
+        project = CreateValidatorProject(Config.Types.AssetTypeEnemyData, 8, 8);
+        for (int overflow = 0; overflow <= Config.Effect.MaxEffectsPerAnimation; overflow++)
+        {
+            project.Animations[0].Effects.Add(new EffectDescriptor(
+                Config.Effect.TypeFlash,
+                "MatrixFlash",
+                Config.Effect.TriggerOnDamaged,
+                0xFF0000FFu,
+                100,
+                0.5f));
+        }
+        result = validator.Validate(project);
+        ObserveIssues(observed, result);
+        RequireMatrixIssue(result, ProjectIssueCode.EffectLimitExceeded);
+
+        project = CreateValidatorProject(Config.Types.AssetTypeEnemyData, 8, 8);
+        project.Animations[0].Effects.Add(null);
+        result = validator.Validate(project);
+        ObserveIssues(observed, result);
+        RequireMatrixIssue(result, ProjectIssueCode.InvalidEffectDescriptor);
+
+        // batch3.5 agent (item #6): sub-element attachment issues.
+        project = CreateValidatorProject(Config.Types.AssetTypeEnemyData, 8, 8);
+        for (int overflow = 0; overflow <= Config.Attachment.MaxPerFrame; overflow++)
+        {
+            project.Animations[0].Frames[0].Attachments.Add(
+                new SubElementAttachment("MatrixTorch", overflow, 0, 0, false, false));
+        }
+        result = validator.Validate(project);
+        ObserveIssues(observed, result);
+        RequireMatrixIssue(result, ProjectIssueCode.AttachmentLimitExceeded, 0, 0);
+
+        project = CreateValidatorProject(Config.Types.AssetTypeEnemyData, 8, 8);
+        project.Animations[0].Frames[0].Attachments.Add(null);
+        result = validator.Validate(project);
+        ObserveIssues(observed, result);
+        RequireMatrixIssue(result, ProjectIssueCode.InvalidAttachment, 0, 0);
 
         project = CreateValidatorProject(Config.Types.AssetTypeEnemyData, 8, 8);
         project.Animations[0].Frames[0] = null;
@@ -529,6 +571,18 @@ internal static partial class Program
                 project,
                 ProjectValidationScope.Designer | ProjectValidationScope.Export);
             Require(result.IsValid && result.Issues.Count == 0);
+
+            // Item #33: a linked directional project with empty parked facings
+            // reports DirectionalFacingIncomplete (Subject = facing name) at
+            // EXPORT scope only.
+            project.Directional = new DirectionalState(Config.Entity.FacingDown);
+            Require(validator.Validate(project, ProjectValidationScope.Designer).IsValid);
+            result = validator.Validate(project, ProjectValidationScope.Export);
+            ObserveIssues(observed, result);
+            RequireMatrixIssueWithSubject(
+                result,
+                ProjectIssueCode.DirectionalFacingIncomplete,
+                Config.Entity.FacingUp);
         }
         finally
         {
@@ -713,6 +767,96 @@ internal static partial class Program
         overflow.ExecuteCommand(new MatrixSizedCommand(overflowState, 1, long.MaxValue));
         Require(overflow.Current.UndoCount == 1);
         Require(overflow.Current.UndoBytes == long.MaxValue);
+    }
+
+    // Structural validation scope (#30): ProjectValidationScope.Structural runs only
+    // the canvas/animation/frame/layer/hitbox integrity checks so previews can play
+    // while schema-level fields are still incomplete; the full scopes keep everything.
+    private static void TestValidatorStructuralScope()
+    {
+        var schema = new AssetSchemaService();
+        var validator = new ProjectValidator(schema);
+        string enemy = Config.Types.AssetTypeEnemyData;
+
+        // Schema-level breakage is invisible to the structural scope...
+        EFYVProject project = CreateValidatorProject(enemy, 8, 8);
+        project.AssetProperties[SharedConfig.EntityNameField] = "  ";
+        project.AssetProperties[SharedConfig.BaseSpeedField] = -1f;
+        project.AssetProperties["structuralUnknown"] = 1;
+        project.AssetProperties[Config.Entity.KeyFacing] = "Diagonal";
+        ProjectValidationResult result = validator.Validate(
+            project,
+            ProjectValidationScope.Structural);
+        Require(result.IsValid && result.Issues.Count == 0);
+
+        // ...while the default designer scope still reports all of it.
+        result = validator.Validate(project);
+        Require(!result.IsValid);
+        Require(ContainsIssue(result, ProjectIssueCode.EmptyIdentityName));
+        Require(ContainsIssue(result, ProjectIssueCode.PropertyOutOfRange));
+        Require(ContainsIssue(result, ProjectIssueCode.UnknownProperty));
+        Require(ContainsIssue(result, ProjectIssueCode.InvalidFacing));
+
+        // The structural scope alone also skips export-path checks.
+        project.UnityProjectPath = null;
+        result = validator.Validate(project, ProjectValidationScope.Structural);
+        Require(!ContainsIssue(result, ProjectIssueCode.MissingUnityProjectPath));
+
+        // Structural integrity failures stay fatal in the structural scope.
+        Require(ContainsIssue(
+            validator.Validate(null, ProjectValidationScope.Structural),
+            ProjectIssueCode.MissingProject));
+
+        EFYVProject badCanvas = CreateValidatorProject(enemy, 8, 8);
+        badCanvas.CanvasWidth = 0;
+        Require(ContainsIssue(
+            validator.Validate(badCanvas, ProjectValidationScope.Structural),
+            ProjectIssueCode.InvalidCanvasDimensions));
+
+        EFYVProject noAnimations = CreateValidatorProject(enemy, 8, 8);
+        noAnimations.Animations.Clear();
+        Require(ContainsIssue(
+            validator.Validate(noAnimations, ProjectValidationScope.Structural),
+            ProjectIssueCode.MissingAnimations));
+
+        EFYVProject noFrames = CreateValidatorProject(enemy, 8, 8);
+        noFrames.Animations[0].Frames.Clear();
+        Require(ContainsIssue(
+            validator.Validate(noFrames, ProjectValidationScope.Structural),
+            ProjectIssueCode.MissingFrames));
+
+        EFYVProject badFrame = CreateValidatorProject(enemy, 8, 8);
+        badFrame.Animations[0].Frames[0] = new Frame(7, 8);
+        Require(ContainsIssue(
+            validator.Validate(badFrame, ProjectValidationScope.Structural),
+            ProjectIssueCode.FrameDimensionMismatch));
+
+        EFYVProject badLayer = CreateValidatorProject(enemy, 8, 8);
+        badLayer.Animations[0].Frames[0].Layers.Add(new Layer("structuralWrong", 7, 8));
+        Require(ContainsIssue(
+            validator.Validate(badLayer, ProjectValidationScope.Structural),
+            ProjectIssueCode.LayerDimensionMismatch));
+
+        EFYVProject badFps = CreateValidatorProject(enemy, 8, 8);
+        badFps.Animations[0].FPS = 0;
+        Require(ContainsIssue(
+            validator.Validate(badFps, ProjectValidationScope.Structural),
+            ProjectIssueCode.InvalidFrameRate));
+
+        EFYVProject badHitbox = CreateValidatorProject(enemy, 8, 8);
+        badHitbox.Animations[0].Frames[0].Hitboxes["StructuralBad"] =
+            MatrixHitbox(-0.5f, 0f, 0f, 0f);
+        Require(ContainsIssue(
+            validator.Validate(badHitbox, ProjectValidationScope.Structural),
+            ProjectIssueCode.InvalidHitboxBounds));
+
+        // Combining Structural with a full scope keeps the full checks.
+        EFYVProject combined = CreateValidatorProject(enemy, 8, 8);
+        combined.AssetProperties[SharedConfig.EntityNameField] = " ";
+        result = validator.Validate(
+            combined,
+            ProjectValidationScope.Structural | ProjectValidationScope.Designer);
+        Require(ContainsIssue(result, ProjectIssueCode.EmptyIdentityName));
     }
 
     private static void RequireSchemaFieldsEqual(

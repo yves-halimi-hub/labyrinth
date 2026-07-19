@@ -1,0 +1,16 @@
+{
+    "name": "EFYV.Game",
+    "rootNamespace": "EFYV",
+    "references": [
+        "EFYVBackend.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

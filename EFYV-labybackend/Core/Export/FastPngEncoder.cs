@@ -1,15 +1,21 @@
 using System;
 using System.Buffers;
 using System.IO;
+using System.IO.Compression;
+using EFYVBackend.Core.IO;
 using BackendConfig = EFYVBackend.Core.Data.EFYVLabyrinthConfig.Backend;
 
 namespace EFYVBackend.Core.Export
 {
     internal static class FastPngEncoder
     {
-        private static readonly uint[] CrcTable = CreateCrcTable();
 
         public static unsafe void Write<T>(Stream stream, T[] pixels, int width, int height) where T : unmanaged
+        {
+            Write(stream, pixels, width, height, true);
+        }
+
+        public static unsafe void Write<T>(Stream stream, T[] pixels, int width, int height, bool compressed) where T : unmanaged
         {
             if (stream == null) throw new ArgumentNullException(nameof(stream));
             if (!stream.CanWrite) throw new ArgumentException(null, nameof(stream));
@@ -23,7 +29,8 @@ namespace EFYVBackend.Core.Export
             WriteIhdr(stream, width, height);
             fixed (T* pixelPointer = pixels)
             {
-                WriteIdat(stream, (uint*)pixelPointer, width, height);
+                if (compressed) WriteIdatCompressed(stream, (uint*)pixelPointer, width, height);
+                else WriteIdatStored(stream, (uint*)pixelPointer, width, height);
             }
             WriteChunk(stream, BackendConfig.Exporter.Png.IendChunkType, Array.Empty<byte>());
         }
@@ -41,7 +48,50 @@ namespace EFYVBackend.Core.Export
             WriteChunk(stream, BackendConfig.Exporter.Png.IhdrChunkType, data);
         }
 
-        private static unsafe void WriteIdat(Stream stream, uint* pixels, int width, int height)
+        private static unsafe void WriteIdatCompressed(Stream stream, uint* pixels, int width, int height)
+        {
+            int rowLength = checked(
+                width * BackendConfig.Exporter.Png.RgbaChannelCount +
+                BackendConfig.Exporter.Png.ScanlineFilterLength);
+            byte[] rowBuffer = ArrayPool<byte>.Shared.Rent(rowLength);
+            try
+            {
+                using (MemoryStream compressed = new MemoryStream())
+                {
+                    using (ZLibStream deflater = new ZLibStream(compressed, CompressionLevel.Fastest, true))
+                    {
+                        int pixelIndex = 0;
+                        for (int y = 0; y < height; y++)
+                        {
+                            rowBuffer[0] = BackendConfig.Exporter.Png.ScanlineFilterNone;
+                            int rowIndex = BackendConfig.Exporter.Png.ScanlineFilterLength;
+                            for (int x = 0; x < width; x++)
+                            {
+                                uint packed = pixels[pixelIndex++];
+                                rowBuffer[rowIndex] = (byte)packed;
+                                rowBuffer[rowIndex + 1] = (byte)(packed >> BackendConfig.Pixel.GreenShift);
+                                rowBuffer[rowIndex + 2] = (byte)(packed >> BackendConfig.Pixel.BlueShift);
+                                rowBuffer[rowIndex + 3] = (byte)(packed >> BackendConfig.Pixel.AlphaShift);
+                                rowIndex += BackendConfig.Exporter.Png.RgbaChannelCount;
+                            }
+                            deflater.Write(rowBuffer, 0, rowLength);
+                        }
+                    }
+                    if (compressed.Length > int.MaxValue) throw new ArgumentOutOfRangeException(nameof(width));
+                    WriteChunk(
+                        stream,
+                        BackendConfig.Exporter.Png.IdatChunkType,
+                        compressed.GetBuffer(),
+                        (int)compressed.Length);
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(rowBuffer);
+            }
+        }
+
+        private static unsafe void WriteIdatStored(Stream stream, uint* pixels, int width, int height)
         {
             long rowLength = checked((long)width * BackendConfig.Exporter.Png.RgbaChannelCount + BackendConfig.Exporter.Png.ScanlineFilterLength);
             long rawLength = checked(rowLength * height);
@@ -178,14 +228,20 @@ namespace EFYVBackend.Core.Export
 
         private static void WriteChunk(Stream stream, byte[] type, byte[] data)
         {
+            if (data == null) throw new ArgumentNullException(nameof(data));
+            WriteChunk(stream, type, data, data.Length);
+        }
+
+        private static void WriteChunk(Stream stream, byte[] type, byte[] data, int count)
+        {
             if (type == null || type.Length != BackendConfig.Exporter.Png.ChunkTypeLength) throw new ArgumentException(null, nameof(type));
             if (data == null) throw new ArgumentNullException(nameof(data));
-            WriteUInt32BigEndian(stream, (uint)data.Length);
+            WriteUInt32BigEndian(stream, (uint)count);
             stream.Write(type, 0, type.Length);
-            if (data.Length > 0) stream.Write(data, 0, data.Length);
+            if (count > 0) stream.Write(data, 0, count);
 
             uint crc = UpdateCrc(BackendConfig.Exporter.Png.InitialCrc, type, 0, type.Length);
-            crc = UpdateCrc(crc, data, 0, data.Length);
+            crc = UpdateCrc(crc, data, 0, count);
             WriteUInt32BigEndian(stream, crc ^ BackendConfig.Exporter.Png.FinalCrcMask);
         }
 
@@ -195,30 +251,12 @@ namespace EFYVBackend.Core.Export
             crc = UpdateCrc(crc, data, 0, count);
         }
 
+        // Single-sourced CRC-32 (batch-2 deferred nit): the encoder no longer
+        // carries a private table copy - it delegates to the shared
+        // Core/IO/FastCrc32 used by the save-engine header and the decoder.
         private static uint UpdateCrc(uint crc, byte[] data, int offset, int count)
         {
-            for (int i = 0; i < count; i++)
-            {
-                crc = CrcTable[(crc ^ data[offset + i]) & BackendConfig.Exporter.Png.CrcIndexMask] ^ (crc >> 8);
-            }
-            return crc;
-        }
-
-        private static uint[] CreateCrcTable()
-        {
-            uint[] table = new uint[BackendConfig.Exporter.Png.CrcTableSize];
-            for (uint i = 0; i < table.Length; i++)
-            {
-                uint value = i;
-                for (int bit = 0; bit < BackendConfig.Exporter.Png.CrcBitsPerByte; bit++)
-                {
-                    value = (value & 1u) != 0
-                        ? BackendConfig.Exporter.Png.CrcPolynomial ^ (value >> 1)
-                        : value >> 1;
-                }
-                table[i] = value;
-            }
-            return table;
+            return FastCrc32.Update(crc, new ReadOnlySpan<byte>(data, offset, count));
         }
 
         private static void WriteUInt32BigEndian(Stream stream, uint value)

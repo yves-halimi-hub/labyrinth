@@ -6,10 +6,11 @@ Concrete world interactions:
 
 | File | Behavior |
 | --- | --- |
-| [`BaseMerchantProp.cs`](BaseMerchantProp.cs) | Generates inventory, charges currency, applies or refunds purchases |
+| [`BaseMerchantProp.cs`](BaseMerchantProp.cs) | Generates inventory and raises `OnMerchantInteracted` on contact (no auto-buy); `AttemptPurchase` is the explicit purchase API that charges, applies, or refunds |
 | [`ChestProp.cs`](ChestProp.cs) | Clamps grade and requests upgrade rewards |
 | [`CoinProp.cs`](CoinProp.cs) | Clamps grade, calculates value, and awards persistent/session coins |
 | [`DoorProp.cs`](DoorProp.cs) | Hashes a target map ID and requests a map switch |
+| [`GenericProp.cs`](GenericProp.cs) | Item #4: the neutral prop archetype the debug spawn factory instantiates for any imported `GameAssetData`; a bare `NonInteractableProp` that shows the imported sprite/animation and takes blocking from the asset's `IsWalkable` slot |
 | [`SarcophageProp.cs`](SarcophageProp.cs) | Selects teleport, ambush, trap, or curse outcomes |
 | [`TreeProp.cs`](TreeProp.cs) | Passive nonblocking animated scenery |
 | [`XPGem.cs`](XPGem.cs) | Awards authored experience and returns to the pool |

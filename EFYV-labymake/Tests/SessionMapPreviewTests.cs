@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using EFYVLabyMake.Core.Export;
 using EFYVLabyMake.Core.Logic;
 using EFYVLabyMake.Core.Models;
 using EFYVLabyMake.Core.Tools;
@@ -236,6 +237,106 @@ internal static partial class Program
             Require(preview.Tick(beyondIntFrames));
             Require(preview.Current.FrameIndex == expectedFrame);
             Require(events >= 8);
+        }
+        finally
+        {
+            DeleteDirectory(root);
+        }
+    }
+
+    // LoadPreview validation scope (#30): the preview only requires STRUCTURAL
+    // validity, so schema-level gaps (an empty identity name while sketching) no
+    // longer block playback; structural breakage still does.
+    private static void TestSessionPreviewStructuralValidationScope()
+    {
+        string root = NewTemporaryDirectory();
+        try
+        {
+            EFYVProject project = CreateValidProject(root, 3);
+            project.AssetProperties[SharedConfig.EntityNameField] = "   ";
+            project.Animations[0].FPS = 10;
+            for (int index = 0; index < 3; index++)
+                project.Animations[0].Frames[index].Layers[0].Pixels[0].Rgba =
+                    Pack((byte)(index + 1), 0, 0, 255);
+            using (DesignerSession session = DesignerSession.Create("StructuralPreview", project, root))
+            {
+                session.AutosaveEnabled = false;
+                // The designer-scope session validation still flags the empty name...
+                Require(!session.Current.Validation.IsValid);
+                // ...but the preview loads and plays regardless.
+                session.LoadPreview(0);
+                Require(session.Preview.Current.State == PreviewPlaybackState.Stopped);
+                session.Preview.Play();
+                Require(session.Preview.Tick(TimeSpan.FromMilliseconds(100)));
+                Require(session.Preview.Current.FrameIndex == 1);
+                var pixels = new PixelColor[project.CanvasWidth * project.CanvasHeight];
+                session.Preview.CopyCurrentPixelsTo(pixels);
+                Require(pixels[0].R == 2 && pixels[0].A == 255);
+
+                // Structural breakage still blocks the preview.
+                project.Animations[0].Frames.Add(
+                    new Frame(project.CanvasWidth + 1, project.CanvasHeight));
+                RequireThrows<ProjectValidationException>(() => session.LoadPreview(0));
+                project.Animations[0].Frames.RemoveAt(3);
+                session.LoadPreview(0);
+                Require(session.Preview.Current.FrameCount == 3);
+            }
+        }
+        finally
+        {
+            DeleteDirectory(root);
+        }
+    }
+
+    // Item #27: validation is deferred off the per-command hot path (MarkDirty
+    // no longer validates synchronously) but a reader always gets a CURRENT
+    // result. Proven behaviorally: the result reflects the post-command state,
+    // is cached between reads (compute-once), recomputes after the next edit,
+    // and every published snapshot still carries a non-null current validation.
+    private static void TestSessionValidationDeferredComputeOnDemand()
+    {
+        string root = NewTemporaryDirectory();
+        try
+        {
+            EFYVProject project = CreateValidProject(root, 1);
+            using (DesignerSession session = DesignerSession.Create("DeferredValidation", project, root))
+            {
+                session.AutosaveEnabled = false;
+
+                // The constructor computed a baseline; with no edit between reads
+                // the SAME cached instance comes back (the validate ran once).
+                ProjectValidationResult baseline = session.Current.Validation;
+                Require(baseline != null && baseline.IsValid);
+                Require(ReferenceEquals(baseline, session.Current.Validation));
+
+                // A property the toolbar accepts but the validator rejects: reading
+                // AFTER the command surfaces the new (invalid) result, so it was
+                // resolved on demand rather than frozen at construction.
+                session.SetProperty(SharedConfig.EntityNameField, "../escape");
+                ProjectValidationResult afterBreak = session.Current.Validation;
+                Require(!ReferenceEquals(baseline, afterBreak));
+                Require(!afterBreak.IsValid);
+                Require(ContainsIssue(afterBreak, ProjectIssueCode.InvalidIdentityName));
+                // Still cached until the next dirtying edit.
+                Require(ReferenceEquals(afterBreak, session.Current.Validation));
+
+                // Fixing the identity and reading again surfaces the valid result.
+                session.SetProperty(SharedConfig.EntityNameField, "FixedName");
+                ProjectValidationResult afterFix = session.Current.Validation;
+                Require(!ReferenceEquals(afterBreak, afterFix));
+                Require(afterFix.IsValid);
+
+                // The published snapshot carries a current, non-null validation too.
+                var publishedValidations = new System.Collections.Generic.List<ProjectValidationResult>();
+                session.StateChanged += snapshot =>
+                {
+                    Require(snapshot.Validation != null);
+                    publishedValidations.Add(snapshot.Validation);
+                };
+                session.SetProperty(SharedConfig.EntityNameField, "   ");
+                Require(publishedValidations.Count >= 1);
+                Require(!publishedValidations[publishedValidations.Count - 1].IsValid);
+            }
         }
         finally
         {

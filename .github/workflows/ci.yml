@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    name: Run all four verification suites
+    # windows-latest is required: SafePathPolicy.IsSafeFileStem delegates to
+    # Path.GetInvalidFileNameChars(), and the backend suite
+    # (ExportIoDeepTests.TestExportIoSafePathPolicyModel) asserts Windows-only
+    # rejections such as "a|b", "a\tb", and "dir\leaf" that Linux treats as
+    # valid file names.
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          # The backend and designer verification projects target net8.0;
+          # the game verification project targets net10.0.
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Backend verification (net8.0)
+        run: dotnet run --project EFYV-labybackend/Tests/EFYVBackend.Verification.csproj -c Release
+
+      - name: Designer verification (net8.0)
+        run: dotnet run --project EFYV-labymake/Tests/EFYVLabyMake.Verification.csproj -c Release
+
+      # Build-only (no display needed): keeps the Avalonia editor shell from
+      # drifting against the source-linked designer/backend cores. Needs NuGet
+      # access for the three Avalonia packages.
+      - name: Editor shell build (net8.0)
+        run: dotnet build EFYV-labymake/App/EFYVLabyMake.App.csproj -c Release
+
+      - name: Game and editor verification (net10.0)
+        run: dotnet run --project EFYV-labyrinth/Tests/EFYVGame.Verification.csproj -c Release
+
+      - name: Python contract tests
+        run: python -m unittest discover -s EFYV-labyrinth/Tests -p "test_*.py" -v

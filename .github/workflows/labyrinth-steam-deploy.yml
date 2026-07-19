@@ -4,6 +4,17 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      unityVersion:
+        description: >-
+          Unity editor version for GameCI (must have a unityci/editor image).
+          Leave 'auto' to read ProjectSettings/ProjectVersion.txt - note that
+          beta editors (e.g. 6000.6.0b4) usually have no GameCI image, so a
+          released version must be supplied here until the project pin moves
+          to a released editor.
+        required: false
+        default: 'auto'
 
 jobs:
   buildWindows:
@@ -11,29 +22,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
-        with:
-          lfs: true
+        uses: actions/checkout@v4
 
       - name: Cache Unity Library
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: EFYV-labyrinth/Library
-          key: Library-${{ hashFiles('EFYV-labyrinth/Assets/**', 'EFYV-labyrinth/Packages/**') }}
+          key: Library-${{ hashFiles('EFYV-labyrinth/Assets/**', 'EFYV-labyrinth/Packages/**', 'EFYV-labyrinth/ProjectSettings/**', 'EFYV-labybackend/Core/**') }}
           restore-keys: |
             Library-
 
       - name: Unity Build Action
-        uses: game-ci/unity-builder@v2
+        uses: game-ci/unity-builder@v4
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         with:
           projectPath: EFYV-labyrinth
+          unityVersion: ${{ github.event.inputs.unityVersion || 'auto' }}
           targetPlatform: StandaloneWindows64
           buildName: EFYV-Labyrinth
 
       - name: Upload Build Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Build-Windows
           path: build/StandaloneWindows64
@@ -42,22 +54,23 @@ jobs:
     name: Deploy Labyrinth to Steam
     needs: buildWindows
     runs-on: ubuntu-latest
+    # Skips cleanly (instead of failing the tag build) until the Steam app id
+    # repository variable is configured.
+    if: vars.STEAM_APP_ID != ''
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
-
       - name: Download Build Artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: Build-Windows
           path: build/StandaloneWindows64
 
       - name: Push Build via SteamPipe Action
-        uses: game-ci/steam-deploy@v2
+        uses: game-ci/steam-deploy@v3
         with:
           username: ${{ secrets.STEAM_USERNAME }}
-          password: ${{ secrets.STEAM_PASSWORD }}
-          appId: '123456'
+          configVdf: ${{ secrets.STEAM_CONFIG_VDF }}
+          appId: ${{ vars.STEAM_APP_ID }}
           buildDescription: 'Automated CI/CD Release ${{ github.ref_name }}'
-          rootPath: build/StandaloneWindows64
-          depot1Path: '.'
+          rootPath: build
+          firstDepotIdOverride: ''
+          depot1Path: StandaloneWindows64

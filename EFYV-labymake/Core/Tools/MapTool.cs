@@ -39,7 +39,9 @@ namespace EFYVLabyMake.Core.Tools
             new EFYVBackend.Core.Models.MapToolData { Block = new EFYVBackend.Core.Data.FastSchemaBlock() };
         private short[] automataBuffer;
         private uint seed;
-        private uint randomState;
+        // Instance PRNG from the backend (same xorshift stream the tool used to duplicate
+        // line-for-line); reseeded per operation so every gesture is independently replayable.
+        private EFYVBackend.Core.Math.FastRandomState randomState;
         private int operationIndex;
 
         public event Action<MapOperationResult> OperationCompleted;
@@ -209,10 +211,32 @@ namespace EFYVLabyMake.Core.Tools
         private int PaintPropTile(int x, int y)
         {
             int tileSize = Config.Tool.TileMaker.DefaultTileSize;
-            int gridX = (x / tileSize) * tileSize;
-            int gridY = (y / tileSize) * tileSize;
+            // FLOOR snap: integer division truncates toward zero, which used to misalign
+            // negative pointer coordinates (-63 snapped to -32 instead of -64).
+            int gridX = FloorSnapToTile(x, tileSize);
+            int gridY = FloorSnapToTile(y, tileSize);
+            // Clamp onto the target map: valid origins are the tile-size-aligned canvas
+            // coordinates of tiles that exist on the map (Width/Height are tile counts).
+            long maxOriginX = ((long)TargetMap.Width - EFYVBackend.Core.Data.EFYVLabyrinthConfig.Shared.UnitStep) * tileSize;
+            long maxOriginY = ((long)TargetMap.Height - EFYVBackend.Core.Data.EFYVLabyrinthConfig.Shared.UnitStep) * tileSize;
+            gridX = ClampToTileOrigin(gridX, maxOriginX);
+            gridY = ClampToTileOrigin(gridY, maxOriginY);
             PlaceProp(SelectedAsset, gridX, gridY, Config.Tool.Map.DefaultObjectScale);
             return EFYVBackend.Core.Data.EFYVLabyrinthConfig.Shared.UnitStep;
+        }
+
+        private static int FloorSnapToTile(int coordinate, int tileSize)
+        {
+            int quotient = coordinate / tileSize;
+            if (coordinate < Config.Canvas.MinCoordinate && coordinate % tileSize != Config.Common.EmptyCount) quotient--;
+            return quotient * tileSize;
+        }
+
+        private static int ClampToTileOrigin(int snapped, long maxOrigin)
+        {
+            if (snapped < Config.Canvas.MinCoordinate) return Config.Canvas.MinCoordinate;
+            if (snapped > maxOrigin) return (int)maxOrigin;
+            return snapped;
         }
 
         private void PlaceProp(string assetKey, int x, int y, float scale)
@@ -259,42 +283,34 @@ namespace EFYVLabyMake.Core.Tools
             uint operationSeed = seed ^
                 ((uint)(operationIndex + EFYVBackend.Core.Data.EFYVLabyrinthConfig.Shared.UnitStep) *
                     BackendConfig.Math.FnvPrime);
-            randomState = operationSeed == BackendConfig.Random.InvalidSeed
+            // FastRandomState applies the identical invalid-seed fallback; the mapped value is
+            // recomputed here only because the operation result reports the effective seed.
+            uint effectiveSeed = operationSeed == BackendConfig.Random.InvalidSeed
                 ? BackendConfig.Random.FallbackSeed
                 : operationSeed;
+            randomState = new EFYVBackend.Core.Math.FastRandomState(effectiveSeed);
             operationIndex++;
-            return randomState;
-        }
-
-        private uint NextUInt()
-        {
-            randomState ^= randomState << BackendConfig.Random.XorShiftLeftA;
-            randomState ^= randomState >> BackendConfig.Random.XorShiftRight;
-            randomState ^= randomState << BackendConfig.Random.XorShiftLeftB;
-            return randomState;
+            return effectiveSeed;
         }
 
         private float NextUnitFloat()
         {
-            return NextUInt() * BackendConfig.Random.UIntToUnitFloat;
+            return randomState.NextUnitFloat();
         }
 
         private float NextRange(float minimum, float maximum)
         {
+            // Unlike FastRandomState.Range, an empty or inverted range consumes NO draw -
+            // this preserves the tool's historical (test-pinned) draw sequences.
             if (maximum <= minimum) return minimum;
-            return minimum + ((maximum - minimum) * NextUnitFloat());
+            return randomState.Range(minimum, maximum);
         }
 
         private void GetRandomOffset2D(float radius, out float x, out float y)
         {
-            float squareMagnitude;
-            do
-            {
-                x = NextRange(-Config.Common.UnitScale, Config.Common.UnitScale);
-                y = NextRange(-Config.Common.UnitScale, Config.Common.UnitScale);
-                squareMagnitude = (x * x) + (y * y);
-            }
-            while (squareMagnitude > Config.Common.UnitScale || squareMagnitude == Config.Common.ZeroFloat);
+            // Bit-identical to the deleted hand-rolled rejection loop: InsideUnitCircle draws
+            // the same (-1, 1) pairs in the same order and applies the same accept condition.
+            randomState.InsideUnitCircle(out x, out y);
             x *= radius;
             y *= radius;
         }

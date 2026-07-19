@@ -43,5 +43,20 @@ namespace EFYV.Core.Data
         [Header(GameConfig.DataConfig.HeaderArt)]
         public Sprite sprite;
 
+        // Item #13: the full imported frame set (in atlas order) when the
+        // source art was a multi-frame sheet, so animated props play the
+        // designer's frames instead of a hand-authored inspector array. Null
+        // for single-sprite imports; `sprite` remains frame 0 either way.
+        [SerializeField, HideInInspector] private Sprite[] importedFrames;
+        public Sprite[] ImportedFrames => importedFrames;
+
+        public void SetImportedFrames(Sprite[] frames)
+        {
+            importedFrames = frames;
+            if (frames != null && frames.Length > GameConfig.Runtime.EmptyCollectionCount)
+            {
+                sprite = frames[GameConfig.Runtime.FirstIndex];
+            }
+        }
     }
 }

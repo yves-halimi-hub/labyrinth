@@ -31,63 +31,39 @@ namespace EFYV.Core.Weapons
             CooldownTime = GameConfig.Weapons.MagicWand.DefaultCooldown; // Fires once per second at start
             BaseDamage = GameConfig.Weapons.MagicWand.DefaultDamage;
             Level = GameConfig.Weapons.MagicWand.DefaultLevel;
+
+            // #32: fill the projectile pool up-front so the first volley never
+            // hitches on Instantiate. No-op without a prefab or PoolManager;
+            // populate-up-to-target keeps repeated grants idempotent.
+            PoolManager.TryPrewarm(projectilePrefab, GameConfig.Pool.ProjectilePrewarmCount);
         }
 
         public override void Fire()
         {
-            // 1. Locate Target
+            // 1. Locate Target (faction-aware: player wands aim at the nearest packed-list
+            // enemy, enemy-held wands aim at the player)
             Vector3 origin = transform.position;
-            Enemy nearestEnemy = FindNearestEnemy(origin);
-            
-            if (nearestEnemy != null && projectilePrefab != null)
+            if (!TryGetTargetPosition(origin, out Vector3 targetPosition)) return;
+
+            if (projectilePrefab != null)
             {
+                PoolManager pool = PoolManager.Instance;
+                if (pool == null) return;
+
                 // MIGRATION: Bypassed Unity's standard floating-point normalization
-                Vector2 diff = nearestEnemy.entityTransform.position - origin;
+                Vector2 diff = targetPosition - origin;
                 Vector2 direction = diff.FastNormalized();
-                
+
                 // 3. Call Fast Object Pool instead of Instantiate
-                GameEntity spawnedEntity = PoolManager.Instance.Spawn(projectilePrefab, origin, Quaternion.identity);
+                GameEntity spawnedEntity = pool.Spawn(projectilePrefab, origin, Quaternion.identity);
                 Projectile proj = spawnedEntity as Projectile;
-                
+
                 if (proj != null)
                 {
-                    // 4. Initialize bullet stats
-                    proj.Initialize(direction, BaseDamage, projectileSpeed, basePierceCount);
+                    // 4. Initialize bullet stats, carrying the owner's faction
+                    proj.Initialize(direction, BaseDamage, projectileSpeed, basePierceCount, OwnerFaction);
                 }
             }
-        }
-
-        private static Enemy FindNearestEnemy(Vector3 origin)
-        {
-            // MIGRATION: Completely eliminated FindObjectsOfType. 
-            // We now iterate over a perfectly packed C# List representing only active enemies in memory.
-            var allEnemies = Enemy.ActiveEnemies;
-            Enemy nearest = null;
-            float minDistanceSqr = float.MaxValue;
-
-            // Notice we use a basic for-loop instead of foreach for even more performance (no enumerator GC)
-            int count = allEnemies.Count;
-            for (int i = GameConfig.Weapons.LoopStartIndex; i < count; i++)
-            {
-                Enemy enemy = allEnemies[i];
-
-                // PERFORMANCE: Broad-Phase 1D Heuristic Culling
-                // We instantly cull enemies that are too far away on the X-axis before ever calculating the Y-axis.
-                // This eliminates ~50% to 75% of the multiplication operations inside this O(N) loop!
-                float dx = origin.x - enemy.entityTransform.position.x;
-                if ((dx * dx) >= minDistanceSqr) continue; 
-
-                float dy = origin.y - enemy.entityTransform.position.y;
-                float distSqr = (dx * dx) + (dy * dy);
-                
-                if (distSqr < minDistanceSqr)
-                {
-                    minDistanceSqr = distSqr;
-                    nearest = enemy;
-                }
-            }
-
-            return nearest;
         }
 
         public override void Upgrade()

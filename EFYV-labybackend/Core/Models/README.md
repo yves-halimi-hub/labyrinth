@@ -10,7 +10,16 @@ Named data views shared across editor, game, exporter, and importer boundaries.
   player, entity, projectile, weapon, power-up, project, animation, frame, layer,
   viewport, and editor tool state.
 - [SharedData.cs](SharedData.cs) contains `HitboxData` plus the JSON DTOs
-  `EFYVJsonFormat`, `AtlasMetadataJson`, `AnimationMetadataJson`, and `HitboxJson`.
+  `EFYVJsonFormat`, `AtlasMetadataJson`, `AnimationMetadataJson`,
+  `EffectDescriptorJson` (item #7: one authored runtime-effect descriptor —
+  name + params + trigger tag, numeric params nullable with shared defaults),
+  `AttachmentJson` (item #6: one frame-indexed sub-element attachment record —
+  safe-stem `subElement` name, canvas-space pivot position, `zOrder`, and
+  nullable flips that resolve to false when absent), `TilesetManifestJson`
+  (item #5: the optional documentVersion-5 tile-ID manifest —
+  `{tileSize, tiles}` where list index i is FastGridMap short tile id i;
+  `EFYVJsonFormat.tileset` is null/absent on every non-tileset document), and
+  `HitboxJson`.
 
 ## Invariants
 
@@ -25,6 +34,16 @@ Named data views shared across editor, game, exporter, and importer boundaries.
 - JSON field names are fixed by configuration attributes and are consumed across
   repositories. Additive unknown JSON fields are ignored by the current importer,
   while malformed field types can fail deserialization.
-- Construct `HitboxData` when semantic unit-size defaults are required; `default`
-  produces a zero-sized box.
+- `EFYVJsonFormat` carries the top-level `documentVersion` (nullable; absent
+  legacy files read as `Backend.Exporter.LegacyDocumentVersion` via
+  `EffectiveDocumentVersion`) and the optional `baseAssetType` used for importer
+  factory fallback on custom asset types.
+- Construct `HitboxData` (or call `HitboxData.CreateDefault()`, the non-bypassable
+  spelling) when semantic unit-size defaults are required; `default(HitboxData)`,
+  array elements, and uninitialized fields bypass the parameterless constructor
+  and produce a zero-sized box. This bypass is an explicit documented contract on
+  the struct.
+- `MovingToolData`'s jitter amplitude/frequency accessors validate the octant
+  index and throw `ArgumentOutOfRangeException` out of range; an invalid index
+  can no longer alias sibling schema slots.
 

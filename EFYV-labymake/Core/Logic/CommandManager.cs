@@ -44,6 +44,13 @@ namespace EFYVLabyMake.Core.Logic
 
         public event Action<CommandHistorySnapshot> HistoryChanged;
 
+        // Failure contract: when a command throws during Undo/Redo replay the document
+        // state is unknown, so the command is dropped from BOTH stacks (a retry could
+        // not be trusted), HistoryChanged publishes the truthful new counts,
+        // CommandFailed reports the dropped command and its fault, and the original
+        // exception propagates to the caller.
+        public event Action<ICommand, Exception> CommandFailed;
+
         public bool CanUndo => undoHistory.Count > Config.Command.EmptyStackCount;
         public bool CanRedo => redoHistory.Count > Config.Command.EmptyStackCount;
         public CommandHistorySnapshot Current => new CommandHistorySnapshot(
@@ -102,7 +109,15 @@ namespace EFYVLabyMake.Core.Logic
             undoHistory.RemoveLast();
             long commandBytes = GetEstimatedBytes(command);
             undoBytes -= commandBytes;
-            command.Undo();
+            try
+            {
+                command.Undo();
+            }
+            catch (Exception exception)
+            {
+                HandleReplayFailure(command, exception);
+                throw;
+            }
             redoHistory.AddLast(command);
             redoBytes += commandBytes;
             Publish();
@@ -117,7 +132,15 @@ namespace EFYVLabyMake.Core.Logic
             redoHistory.RemoveLast();
             long commandBytes = GetEstimatedBytes(command);
             redoBytes -= commandBytes;
-            command.Execute();
+            try
+            {
+                command.Execute();
+            }
+            catch (Exception exception)
+            {
+                HandleReplayFailure(command, exception);
+                throw;
+            }
             undoHistory.AddLast(command);
             undoBytes += commandBytes;
             Publish();
@@ -137,6 +160,15 @@ namespace EFYVLabyMake.Core.Logic
         private void Publish()
         {
             HistoryChanged?.Invoke(Current);
+        }
+
+        // See the CommandFailed contract: the command was already removed from its
+        // stack by the caller, so subscribers first observe the truthful counts,
+        // then the failure report; the caller rethrows the original exception.
+        private void HandleReplayFailure(ICommand command, Exception exception)
+        {
+            Publish();
+            CommandFailed?.Invoke(command, exception);
         }
 
         private static long GetEstimatedBytes(ICommand command)

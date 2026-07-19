@@ -51,7 +51,10 @@ namespace EFYV.Core.Weapons.Types
 
         public override void Tick(float deltaTime)
         {
-            // Orbital weapons usually don't have a "cooldown", they just spin constantly and damage things they touch
+            // Orbital weapons usually don't have a "cooldown", they just spin constantly and damage things they touch.
+            // Record the tick's deltaTime so Fire scales contact damage by the same
+            // clock that drives rotation (never the global Time.deltaTime).
+            TickDeltaTime = deltaTime;
             currentAngle += rotationSpeed * deltaTime;
             if (currentAngle >= GameConfig.Weapons.Orbital.FullCircleDegrees) currentAngle -= GameConfig.Weapons.Orbital.FullCircleDegrees;
 
@@ -65,14 +68,13 @@ namespace EFYV.Core.Weapons.Types
             Vector3 center = transform.position;
             float angleStep = GameConfig.Weapons.Orbital.FullCircleDegrees / projectileCount;
 
-            var activeEnemies = Enemy.ActiveEnemies;
             float sqrDamageRadius = damageRadius * damageRadius;
-            float frameDamage = BaseDamage * Time.deltaTime;
+            float frameDamage = BaseDamage * TickDeltaTime;
 
             for (int p = 0; p < projectileCount; p++)
             {
                 float angle = currentAngle + (p * angleStep);
-                
+
                 // PERFORMANCE: C-Optimized Taylor Series FastCos/FastSin from the backend
                 FastMath.FastSinCosTaylor(
                     angle * EFYVBackend.Core.Data.EFYVLabyrinthConfig.Backend.Math.Deg2Rad,
@@ -80,7 +82,7 @@ namespace EFYV.Core.Weapons.Types
                     out float cos);
                 float x = cos * orbitRadius;
                 float y = sin * orbitRadius;
-                
+
                 Vector3 projPos = center + new Vector3(x, y, GameConfig.Weapons.DefaultZOffset);
 
                 if (visualSprites != null && p < visualSprites.Length && visualSprites[p] != null)
@@ -88,15 +90,8 @@ namespace EFYV.Core.Weapons.Types
                     visualSprites[p].position = projPos;
                 }
 
-                // Damage enemies that intersect this specific orbital projectile
-                for (int i = activeEnemies.Count - 1; i >= 0; i--)
-                {
-                    var enemy = activeEnemies[i];
-                    if (enemy.entityTransform.position.FastSqrDistance(projPos) <= sqrDamageRadius)
-                    {
-                        enemy.TakeDamage(frameDamage); // Continuous tick damage
-                    }
-                }
+                // Faction-aware contact damage around this specific orbital projectile
+                DamageTargetsInRadius(projPos, sqrDamageRadius, frameDamage);
             }
         }
     }

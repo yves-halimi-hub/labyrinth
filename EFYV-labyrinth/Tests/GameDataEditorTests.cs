@@ -114,7 +114,9 @@ internal static partial class Program
         Type importerType = typeof(EFYVPixelArtImporter);
         var factories = (IDictionary)GetField(importerType, "AssetFactories", null);
         var assetTypes = (IDictionary)GetField(importerType, "AssetTypes", null);
-        int baseFactoryCount = Config.LabyMake.Schema.AssetDefinitions.Length + 1;
+        // #16e: exactly the four base archetypes plus the generated registrations;
+        // the dead plain-EntityData factory is gone.
+        int baseFactoryCount = Config.LabyMake.Schema.AssetDefinitions.Length;
         Equal(registrations.Length + baseFactoryCount, factories.Count);
         Equal(factories.Count, assetTypes.Count);
 
@@ -224,8 +226,12 @@ internal static partial class Program
         var empty = new EntityFacingImportData(null, default, null);
         Check(!empty.HasImportedData);
         var metadataPresent = new EntityFacingImportData(null,
-            new EntityAtlasMetadata { FrameWidth = 1 }, null);
+            new EntityAtlasMetadata { FrameWidth = 1, FrameHeight = 1 }, null);
         Check(metadataPresent.HasImportedData);
+        // #36: a width-only atlas no longer counts as imported data.
+        var widthOnly = new EntityFacingImportData(null,
+            new EntityAtlasMetadata { FrameWidth = 1 }, null);
+        Check(!widthOnly.HasImportedData);
     }
 
     private static AtlasMetadataJson ValidAtlas()
@@ -478,6 +484,408 @@ internal static partial class Program
         }
     }
 
+    // ------------------------------------------------------------------
+    // b2-pipeline-contract agent additions: the shared schema-field manifest
+    // (#15), PropEntity schema-block reads, the baseAssetType/documentVersion
+    // import contract (#16a/#16e), and the RawArt watcher (#12).
+    // ------------------------------------------------------------------
+
+    private static void TestSchemaManifestImportEndToEnd()
+    {
+        // Every manifest slot maps; nothing else in the block moves.
+        var properties = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        {
+            [Config.Shared.EntityNameField] = JsonValue("\"ManifestProbe\""),
+            [Config.Shared.MaxHealthField] = JsonValue("11.5"),
+            [Config.Shared.BaseSpeedField] = JsonValue("2.25"),
+            [Config.Shared.DamageToPlayerField] = JsonValue("3.5"),
+            [Config.Shared.ExperienceValueField] = JsonValue("4.5"),
+            [Config.Shared.Phase2HealthThresholdField] = JsonValue("5.5"),
+            [Config.Shared.BaseDamageField] = JsonValue("6.5"),
+            [Config.Shared.CooldownTimerField] = JsonValue("7.5"),
+            [Config.Shared.IsWalkableField] = JsonValue("1"),
+            [Config.Shared.TrapDamageField] = JsonValue("8.5"),
+            [Config.Shared.FacingField] = JsonValue("\"Down\"")
+        };
+        FastSchemaBlock block = default;
+        for (int i = 0; i < FastSchemaBlock.MaxSize; i++) block.SetInt(i, unchecked((int)0xA5A50000) + i);
+        int[] before = new int[FastSchemaBlock.MaxSize];
+        for (int i = 0; i < before.Length; i++) before[i] = block.GetInt(i);
+        var unknown = new List<string>();
+        EFYVPixelArtImporter.ApplySchemaProperties(properties, ref block, unknown);
+        Near(11.5f, block.GetFloat((int)AssetSchema.MaxHealth));
+        Near(2.25f, block.GetFloat((int)AssetSchema.BaseSpeed));
+        Near(3.5f, block.GetFloat((int)AssetSchema.DamageToPlayer));
+        Near(4.5f, block.GetFloat((int)AssetSchema.ExperienceValue));
+        Near(5.5f, block.GetFloat((int)AssetSchema.Phase2HealthThreshold));
+        Near(6.5f, block.GetFloat((int)AssetSchema.BaseDamage));
+        Near(7.5f, block.GetFloat((int)AssetSchema.CooldownTimer));
+        Equal(1, block.GetInt((int)AssetSchema.IsWalkable));
+        Near(8.5f, block.GetFloat((int)AssetSchema.TrapDamage));
+        Equal(0, unknown.Count, "Identity/facing keys must not be reported as unknown.");
+        var touched = new HashSet<int>();
+        foreach (Config.Shared.SchemaFieldMapping mapping in Config.Shared.AssetSchemaFieldManifest)
+            touched.Add(mapping.Slot);
+        for (int i = 0; i < before.Length; i++)
+            if (!touched.Contains(i)) Equal(before[i], block.GetInt(i), "Manifest import touched slot " + i);
+
+        // Boolean wire forms: JSON true/false and 0/1 numbers all land as flags.
+        foreach ((string Wire, int Expected) sample in new[] { ("true", 1), ("false", 0), ("0", 0), ("7", 1) })
+        {
+            var boolProperties = new Dictionary<string, JsonElement>
+            {
+                [Config.Shared.IsWalkableField] = JsonValue(sample.Wire)
+            };
+            FastSchemaBlock boolBlock = default;
+            boolBlock.SetInt((int)AssetSchema.IsWalkable, -123);
+            EFYVPixelArtImporter.ApplySchemaProperties(boolProperties, ref boolBlock);
+            Equal(sample.Expected, boolBlock.GetInt((int)AssetSchema.IsWalkable), "wire form " + sample.Wire);
+        }
+        var stringWalkable = new Dictionary<string, JsonElement>
+        {
+            [Config.Shared.IsWalkableField] = JsonValue("\"yes\"")
+        };
+        Throws<InvalidOperationException>(() =>
+        {
+            FastSchemaBlock target = default;
+            EFYVPixelArtImporter.ApplySchemaProperties(stringWalkable, ref target);
+        });
+
+        // Unknown keys are reported (and logged end to end), never silently dropped.
+        string tempRoot = Path.Combine(Path.GetTempPath(), "efyv-manifest-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var format = new EFYVJsonFormat
+            {
+                assetType = nameof(GameAssetData),
+                properties = new Dictionary<string, JsonElement>
+                {
+                    [Config.Shared.AssetNameField] = JsonValue("\"TrapTile\""),
+                    [Config.Shared.IsWalkableField] = JsonValue("0"),
+                    [Config.Shared.TrapDamageField] = JsonValue("42.5"),
+                    [Config.Shared.BaseDamageField] = JsonValue("9"),
+                    [Config.Shared.CooldownTimerField] = JsonValue("0.75"),
+                    ["sparkleFactor"] = JsonValue("3"),
+                    ["zzUnmapped"] = JsonValue("true")
+                }
+            };
+            string path = Path.Combine(tempRoot, "TrapTile" + Config.Game.Importer.ExtensionEFYV);
+            File.WriteAllText(path, JsonSerializer.Serialize(format));
+            InvokeStatic(typeof(EFYVPixelArtImporter), "ImportEFYVAsset", path);
+            GameAssetData imported = AssetDatabase.LoadAssetAtPath<GameAssetData>(
+                Path.GetDirectoryName(path) + Config.Game.Importer.PathSeparator +
+                "TrapTile" + Config.Game.Importer.ExtensionAsset);
+            Check(imported != null, "Manifest end-to-end import failed.");
+            FastSchemaBlock importedBlock = imported.GetSchemaBlock();
+            Equal(0, importedBlock.GetInt((int)AssetSchema.IsWalkable));
+            Near(42.5f, importedBlock.GetFloat((int)AssetSchema.TrapDamage));
+            Near(9f, importedBlock.GetFloat((int)AssetSchema.BaseDamage));
+            Near(0.75f, importedBlock.GetFloat((int)AssetSchema.CooldownTimer));
+            string expectedWarning = string.Format(
+                Config.Game.Importer.LogWarningUnknownSchemaKeys,
+                path,
+                "sparkleFactor, zzUnmapped");
+            Check(Debug.Messages.Contains(expectedWarning),
+                "Unknown schema keys must be logged: " + expectedWarning);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, true);
+        }
+    }
+
+    private static void TestPropWalkableTrapDamageFromSchemaBlock()
+    {
+        var walkableAsset = ScriptableObject.CreateInstance<GameAssetData>();
+        FastSchemaBlock walkableBlock = default;
+        walkableBlock.SetInt((int)AssetSchema.IsWalkable, 1);
+        walkableBlock.SetFloat((int)AssetSchema.TrapDamage, 12.5f);
+        walkableAsset.SetSchemaBlock(walkableBlock);
+
+        var prop = CreateComponent<ProbeProp>(addRenderer: true);
+        prop.Initialize();
+        prop.LoadData(walkableAsset);
+        Check(prop.IsWalkable, "Imported IsWalkable=1 must read walkable.");
+        Check(!prop.IsBlocking, "A walkable designer prop must not block.");
+        Near(12.5f, prop.TrapDamage);
+
+        // The designer flips walkability off in LabyMake; a live refresh must
+        // re-sync the runtime blocking flag from the asset schema block.
+        FastSchemaBlock blockedBlock = walkableBlock;
+        blockedBlock.SetInt((int)AssetSchema.IsWalkable, 0);
+        blockedBlock.SetFloat((int)AssetSchema.TrapDamage, 50f);
+        walkableAsset.SetSchemaBlock(blockedBlock);
+        prop.RefreshDataFromAsset();
+        Check(!prop.IsWalkable);
+        Check(prop.IsBlocking, "IsWalkable=0 must block after RefreshDataFromAsset.");
+        Near(50f, prop.TrapDamage);
+
+        // Hand-placed props without designer data keep the runtime flag as the
+        // source of truth and deal no schema trap damage.
+        var bare = CreateComponent<ProbeProp>(addRenderer: true);
+        bare.Initialize();
+        Check(bare.IsWalkable, "Default props are non-blocking, hence walkable.");
+        Near(0f, bare.TrapDamage);
+        bare.IsBlocking = true;
+        Check(!bare.IsWalkable);
+
+        // Subclass hardcodes still win over asset data because they run after
+        // base.Initialize() (merchants must always block).
+        var merchantData = ScriptableObject.CreateInstance<GameAssetData>();
+        FastSchemaBlock merchantBlock = default;
+        merchantBlock.SetInt((int)AssetSchema.IsWalkable, 1);
+        merchantData.SetSchemaBlock(merchantBlock);
+        var merchant = CreateComponent<EFYV.Core.Entities.Environment.Implementations.BaseMerchantProp>(addRenderer: true);
+        SetField(merchant, "assetData", merchantData);
+        merchant.Initialize();
+        Check(merchant.IsBlocking, "Merchant Initialize must force blocking over asset data.");
+    }
+
+    private static void TestImporterBaseTypeFallbackAndDocumentVersion()
+    {
+        Type importerType = typeof(EFYVPixelArtImporter);
+        string tempRoot = Path.Combine(Path.GetTempPath(), "efyv-basetype-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            // A custom assetType with a known baseAssetType imports as the base
+            // archetype (#16e) - config-only registrations reach the game.
+            var custom = new EFYVJsonFormat
+            {
+                documentVersion = Config.Backend.Exporter.CurrentDocumentVersion,
+                assetType = "FutureCustomData",
+                baseAssetType = nameof(EnemyData),
+                properties = new Dictionary<string, JsonElement>
+                {
+                    [Config.Game.Importer.KeyEntityName] = JsonValue("\"FutureCustom\""),
+                    [Config.Shared.MaxHealthField] = JsonValue("77")
+                }
+            };
+            string customPath = Path.Combine(tempRoot, "FutureCustom" + Config.Game.Importer.ExtensionEFYV);
+            File.WriteAllText(customPath, JsonSerializer.Serialize(custom));
+            InvokeStatic(importerType, "ImportEFYVAsset", customPath);
+            EnemyData fallbackImported = AssetDatabase.LoadAssetAtPath<EnemyData>(
+                Path.GetDirectoryName(customPath) + Config.Game.Importer.PathSeparator +
+                "FutureCustom" + Config.Game.Importer.ExtensionAsset);
+            Check(fallbackImported != null, "baseAssetType fallback must import as the base archetype.");
+            Equal(typeof(EnemyData), fallbackImported.GetType());
+            Near(77f, fallbackImported.GetSchemaBlock().GetFloat((int)AssetSchema.MaxHealth));
+
+            // Unknown assetType with unknown (or missing) baseAssetType rejects
+            // with the per-cause message.
+            var unknownBoth = custom;
+            unknownBoth.assetType = "NoSuchData";
+            unknownBoth.baseAssetType = "AlsoNoSuchData";
+            unknownBoth.properties = new Dictionary<string, JsonElement>
+            {
+                [Config.Game.Importer.KeyEntityName] = JsonValue("\"NoSuch\"")
+            };
+            string unknownPath = Path.Combine(tempRoot, "NoSuch" + Config.Game.Importer.ExtensionEFYV);
+            File.WriteAllText(unknownPath, JsonSerializer.Serialize(unknownBoth));
+            InvokeStatic(importerType, "ImportEFYVAsset", unknownPath);
+            Equal(null, AssetDatabase.LoadAssetAtPath<SchemaBackedAssetData>(
+                Path.GetDirectoryName(unknownPath) + Config.Game.Importer.PathSeparator +
+                "NoSuch" + Config.Game.Importer.ExtensionAsset));
+            Equal(string.Format(Config.Game.Importer.LogErrorUnknownAssetType, unknownPath, "NoSuchData"),
+                Debug.Messages[^1]);
+
+            // Unsupported document versions are rejected before any other work.
+            // The importer accepts the whole supported RANGE (item #10), so the
+            // "future" probe sits one past CurrentDocumentVersion.
+            int futureVersion = Config.Backend.Exporter.CurrentDocumentVersion + 1;
+            string futurePath = Path.Combine(tempRoot, "FutureDoc" + Config.Game.Importer.ExtensionEFYV);
+            File.WriteAllText(
+                futurePath,
+                "{\"documentVersion\":" + futureVersion + ",\"assetType\":\"EnemyData\"," +
+                "\"properties\":{\"entityName\":\"FutureDoc\"},\"hitboxes\":[]}");
+            InvokeStatic(importerType, "ImportEFYVAsset", futurePath);
+            Equal(null, AssetDatabase.LoadAssetAtPath<SchemaBackedAssetData>(
+                Path.GetDirectoryName(futurePath) + Config.Game.Importer.PathSeparator +
+                "FutureDoc" + Config.Game.Importer.ExtensionAsset));
+            Equal(string.Format(
+                    Config.Game.Importer.LogErrorUnsupportedDocumentVersion,
+                    futureVersion,
+                    futurePath,
+                    Config.Backend.Exporter.CurrentDocumentVersion),
+                Debug.Messages[^1]);
+
+            // Below the supported floor rejects the same way.
+            int ancientVersion = Config.Backend.Exporter.MinSupportedDocumentVersion - 1;
+            string ancientPath = Path.Combine(tempRoot, "AncientDoc" + Config.Game.Importer.ExtensionEFYV);
+            File.WriteAllText(
+                ancientPath,
+                "{\"documentVersion\":" + ancientVersion + ",\"assetType\":\"EnemyData\"," +
+                "\"properties\":{\"entityName\":\"AncientDoc\"},\"hitboxes\":[]}");
+            InvokeStatic(importerType, "ImportEFYVAsset", ancientPath);
+            Equal(null, AssetDatabase.LoadAssetAtPath<SchemaBackedAssetData>(
+                Path.GetDirectoryName(ancientPath) + Config.Game.Importer.PathSeparator +
+                "AncientDoc" + Config.Game.Importer.ExtensionAsset));
+
+            // Every version inside [MinSupported .. Current] imports.
+            for (int version = Config.Backend.Exporter.MinSupportedDocumentVersion;
+                version <= Config.Backend.Exporter.CurrentDocumentVersion;
+                version++)
+            {
+                string stem = "RangeDoc" + version;
+                string rangePath = Path.Combine(tempRoot, stem + Config.Game.Importer.ExtensionEFYV);
+                File.WriteAllText(
+                    rangePath,
+                    "{\"documentVersion\":" + version + ",\"assetType\":\"EnemyData\"," +
+                    "\"properties\":{\"entityName\":\"" + stem + "\"},\"hitboxes\":[]}");
+                InvokeStatic(importerType, "ImportEFYVAsset", rangePath);
+                Check(AssetDatabase.LoadAssetAtPath<EnemyData>(
+                    Path.GetDirectoryName(rangePath) + Config.Game.Importer.PathSeparator +
+                    stem + Config.Game.Importer.ExtensionAsset) != null,
+                    "documentVersion " + version + " must be inside the supported range.");
+            }
+
+            // Version-absent legacy documents read as version 1 and import.
+            string legacyPath = Path.Combine(tempRoot, "LegacyDoc" + Config.Game.Importer.ExtensionEFYV);
+            File.WriteAllText(
+                legacyPath,
+                "{\"assetType\":\"EnemyData\",\"properties\":{\"entityName\":\"LegacyDoc\"},\"hitboxes\":[]}");
+            InvokeStatic(importerType, "ImportEFYVAsset", legacyPath);
+            Check(AssetDatabase.LoadAssetAtPath<EnemyData>(
+                Path.GetDirectoryName(legacyPath) + Config.Game.Importer.PathSeparator +
+                "LegacyDoc" + Config.Game.Importer.ExtensionAsset) != null);
+
+            // Malformed and vanished files get their own causes (#16c/#16d).
+            string malformedPath = Path.Combine(tempRoot, "Broken" + Config.Game.Importer.ExtensionEFYV);
+            File.WriteAllText(malformedPath, "{not json");
+            InvokeStatic(importerType, "ImportEFYVAsset", malformedPath);
+            Equal(string.Format(Config.Game.Importer.LogErrorMalformed, malformedPath), Debug.Messages[^1]);
+            string ghostPath = Path.Combine(tempRoot, "Ghost" + Config.Game.Importer.ExtensionEFYV);
+            InvokeStatic(importerType, "ImportEFYVAsset", ghostPath);
+            Equal(string.Format(Config.Game.Importer.LogErrorMissingFile, ghostPath), Debug.Messages[^1]);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, true);
+        }
+    }
+
+    private static void TestRawArtWatcherDebounceAndPolling()
+    {
+        // Pure tracker contract first: baseline, debounce, coalescing, deletion.
+        var tracker = new RawArtChangeTracker(0.3d);
+        var emitted = new List<string>();
+        var files = new List<(string Path, long Stamp)>
+        {
+            ("Assets/RawArt/Hero.efyvlaby", 100L),
+            ("Assets/RawArt/Hero.png", 100L)
+        };
+        Check(!tracker.Update(10.0d, files, emitted), "First scan is a baseline, never an import.");
+        Equal(0, tracker.PendingCount);
+        Check(!tracker.Update(10.5d, files, emitted), "Unchanged snapshots stay idle.");
+
+        files[0] = (files[0].Path, 101L);
+        Check(!tracker.Update(11.0d, files, emitted), "A fresh change must wait out the quiet window.");
+        Equal(1, tracker.PendingCount);
+        files[1] = (files[1].Path, 101L);
+        Check(!tracker.Update(11.2d, files, emitted), "Churn keeps extending the window.");
+        Equal(2, tracker.PendingCount);
+        Check(!tracker.Update(11.49d, files, emitted), "Still inside the quiet window.");
+        Check(tracker.Update(11.5d, files, emitted), "Quiet for debounceSeconds -> emit.");
+        Equal(2, emitted.Count);
+        Equal("Assets/RawArt/Hero.efyvlaby", emitted[0]);
+        Equal("Assets/RawArt/Hero.png", emitted[1]);
+        Equal(0, tracker.PendingCount);
+        emitted.Clear();
+        Check(!tracker.Update(12.0d, files, emitted), "Emission drains the pending set.");
+
+        // A new file appears and is then deleted before the window closes: no import.
+        files.Add(("Assets/RawArt/Ghost.png", 5L));
+        Check(!tracker.Update(13.0d, files, emitted));
+        Equal(1, tracker.PendingCount);
+        files.RemoveAt(2);
+        Check(!tracker.Update(13.1d, files, emitted));
+        Equal(0, tracker.PendingCount);
+        Check(!tracker.Update(14.0d, files, emitted), "Nothing pending, nothing to emit.");
+
+        // Deleted-then-recreated file re-imports with a fresh stamp.
+        files.Add(("Assets/RawArt/Ghost.png", 6L));
+        tracker.Update(15.0d, files, emitted);
+        Check(tracker.Update(15.3d, files, emitted));
+        Equal(1, emitted.Count);
+        Equal("Assets/RawArt/Ghost.png", emitted[0]);
+        emitted.Clear();
+
+        Throws<ArgumentOutOfRangeException>(() => new RawArtChangeTracker(-0.1d));
+        Throws<ArgumentOutOfRangeException>(() => new RawArtChangeTracker(double.NaN));
+        Throws<ArgumentNullException>(() => tracker.Update(1d, null, emitted));
+        Throws<ArgumentNullException>(() => tracker.Update(1d, files, null));
+
+        // End to end through the [InitializeOnLoad] poller with real files and
+        // the stubbed AssetDatabase, including the poll-interval gate.
+        string watchRoot = Path.Combine(Path.GetTempPath(), "efyv-rawart-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(watchRoot);
+        string originalRoot = EFYVRawArtWatcher.WatchRoot;
+        try
+        {
+            EFYVRawArtWatcher.WatchRoot = watchRoot;
+            SetField(typeof(EFYVRawArtWatcher), "nextPollTime", null, 0d);
+            double interval = Config.Game.RawArtWatcher.PollIntervalSeconds;
+            double debounce = Config.Game.RawArtWatcher.DebounceSeconds;
+            double now = 1000d;
+
+            EditorApplication.timeSinceStartup = now;
+            EFYVRawArtWatcher.Poll(); // baseline scan of the empty directory
+            int importsBefore = AssetDatabase.Imports.Count;
+
+            string metadataPath = Path.Combine(watchRoot, "Hero" + Config.Game.Importer.ExtensionEFYV);
+            string texturePath = Path.Combine(watchRoot, "Hero" + Config.Game.Importer.ExtensionPNG);
+            string ignoredPath = Path.Combine(watchRoot, "notes.txt");
+            File.WriteAllText(metadataPath, "{}");
+            File.WriteAllText(texturePath, "png");
+            File.WriteAllText(ignoredPath, "ignored");
+
+            // Inside the poll interval nothing happens (main-thread budget guard).
+            EditorApplication.timeSinceStartup = now + (interval / 2d);
+            EFYVRawArtWatcher.Poll();
+            Equal(importsBefore, AssetDatabase.Imports.Count);
+
+            now += interval;
+            EditorApplication.timeSinceStartup = now;
+            EFYVRawArtWatcher.Poll(); // change detected, debounce window opens
+            Equal(importsBefore, AssetDatabase.Imports.Count);
+
+            now += interval + debounce;
+            EditorApplication.timeSinceStartup = now;
+            EFYVRawArtWatcher.Poll(); // quiet window elapsed -> batched import
+            Equal(importsBefore + 2, AssetDatabase.Imports.Count);
+            Equal(metadataPath, AssetDatabase.Imports[^2].Path);
+            Equal(texturePath, AssetDatabase.Imports[^1].Path);
+            Check(Debug.Messages.Contains(string.Format(
+                Config.Game.RawArtWatcher.LogImported, 2, watchRoot)));
+
+            // A republish of one file (the live loop's steady state) imports once
+            // more; the .txt file never does.
+            File.SetLastWriteTimeUtc(texturePath, File.GetLastWriteTimeUtc(texturePath).AddSeconds(3));
+            now += interval;
+            EditorApplication.timeSinceStartup = now;
+            EFYVRawArtWatcher.Poll();
+            now += interval + debounce;
+            EditorApplication.timeSinceStartup = now;
+            EFYVRawArtWatcher.Poll();
+            Equal(importsBefore + 3, AssetDatabase.Imports.Count);
+            Equal(texturePath, AssetDatabase.Imports[^1].Path);
+            foreach ((string Path, ImportAssetOptions Options) import in AssetDatabase.Imports)
+                Check(!string.Equals(import.Path, ignoredPath, StringComparison.OrdinalIgnoreCase));
+
+            // Steady state with no further changes stays quiet.
+            now += interval;
+            EditorApplication.timeSinceStartup = now;
+            EFYVRawArtWatcher.Poll();
+            Equal(importsBefore + 3, AssetDatabase.Imports.Count);
+        }
+        finally
+        {
+            EFYVRawArtWatcher.WatchRoot = originalRoot;
+            Directory.Delete(watchRoot, true);
+        }
+    }
+
     private static void TestHitboxCalculationsAndLiveRefresh()
     {
         var atlas = new EntityAtlasMetadata { FrameWidth = 32, FrameHeight = 48 };
@@ -551,5 +959,113 @@ internal static partial class Program
         EFYVLiveDebugBridge.QueueRefresh(propData);
         EditorApplication.InvokeDelayCalls();
         Same(second, prop.spriteRenderer.sprite);
+    }
+
+    // batch3.3 agent (item #10): the importer reads the OPTIONAL atlas-animation
+    // timing/playback fields (frameDurationsMs with 0 = inherit-fps sentinel,
+    // loopStart/loopEnd, pingPong) and resolves the effective defaults for
+    // runtime consumers; absent fields fall back to fps and the full range.
+    private static void TestImporterAnimationTimingMetadata()
+    {
+        // Conversion resolves defaults per animation.
+        AtlasMetadataJson atlas = ValidAtlas();
+        AnimationMetadataJson walk = atlas.animations[1];
+        walk.frameDurationsMs = new List<int> { 90, 0 };
+        walk.loopStart = 1;
+        walk.loopEnd = 1;
+        walk.pingPong = true;
+        atlas.animations[1] = walk;
+        Check(EFYVPixelArtImporter.IsValidAtlasMetadata(atlas), "Timed atlas must validate.");
+
+        EntityAtlasMetadata converted = (EntityAtlasMetadata)InvokeStatic(
+            typeof(EFYVPixelArtImporter), "ConvertAtlasMetadata", (AtlasMetadataJson?)atlas);
+        // "idle" carried no optional fields: fps-only timing, full loop range.
+        Equal(null, converted.Animations[0].FrameDurationsMs);
+        Equal(0, converted.Animations[0].LoopStartFrame);
+        Equal(atlas.animations[0].frameCount - 1, converted.Animations[0].LoopEndFrame);
+        Check(!converted.Animations[0].PingPong);
+        // "walk" resolves every populated value; the durations array is a COPY.
+        Check(converted.Animations[1].FrameDurationsMs != null);
+        Equal(2, converted.Animations[1].FrameDurationsMs.Length);
+        Equal(90, converted.Animations[1].FrameDurationsMs[0]);
+        Equal(0, converted.Animations[1].FrameDurationsMs[1]);
+        Equal(1, converted.Animations[1].LoopStartFrame);
+        Equal(1, converted.Animations[1].LoopEndFrame);
+        Check(converted.Animations[1].PingPong);
+        walk.frameDurationsMs[0] = 555;
+        Equal(90, converted.Animations[1].FrameDurationsMs[0]);
+        walk.frameDurationsMs[0] = 90; // restore: the atlas below reuses this list
+
+        // End to end: a documentVersion-2 .efyvlaby with a timed atlas block
+        // imports and lands the resolved metadata on the ScriptableObject.
+        string tempRoot = Path.Combine(Path.GetTempPath(), "efyv-animtiming-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var document = new EFYVJsonFormat
+            {
+                documentVersion = Config.Backend.Exporter.CurrentDocumentVersion,
+                assetType = nameof(EnemyData),
+                properties = new Dictionary<string, JsonElement>
+                {
+                    [Config.Game.Importer.KeyEntityName] = JsonValue("\"TimedImport\"")
+                },
+                hitboxes = new List<HitboxJson>(),
+                atlas = atlas
+            };
+            string path = Path.Combine(tempRoot, "TimedImport" + Config.Game.Importer.ExtensionEFYV);
+            File.WriteAllText(path, JsonSerializer.Serialize(document));
+            InvokeStatic(typeof(EFYVPixelArtImporter), "ImportEFYVAsset", path);
+            EnemyData imported = AssetDatabase.LoadAssetAtPath<EnemyData>(
+                Path.GetDirectoryName(path) + Config.Game.Importer.PathSeparator +
+                "TimedImport" + Config.Game.Importer.ExtensionAsset);
+            Check(imported != null, "Timed .efyvlaby must import.");
+            EntityAnimationMetadata importedWalk = imported.AtlasMetadata.Animations[1];
+            Equal("walk", importedWalk.Name);
+            Equal(12, importedWalk.FramesPerSecond);
+            Equal(90, importedWalk.FrameDurationsMs[0]);
+            Equal(0, importedWalk.FrameDurationsMs[1]);
+            Equal(1, importedWalk.LoopStartFrame);
+            Equal(1, importedWalk.LoopEndFrame);
+            Check(importedWalk.PingPong);
+            EntityAnimationMetadata importedIdle = imported.AtlasMetadata.Animations[0];
+            Equal(null, importedIdle.FrameDurationsMs);
+            Equal(0, importedIdle.LoopStartFrame);
+            Equal(2, importedIdle.LoopEndFrame);
+            Check(!importedIdle.PingPong);
+
+            // A broken timing block (duration count mismatch) rejects the
+            // whole import with the per-cause atlas error.
+            AtlasMetadataJson broken = ValidAtlas();
+            AnimationMetadataJson brokenWalk = broken.animations[1];
+            brokenWalk.frameDurationsMs = new List<int> { 10 };
+            broken.animations[1] = brokenWalk;
+            var brokenDocument = new EFYVJsonFormat
+            {
+                documentVersion = Config.Backend.Exporter.CurrentDocumentVersion,
+                assetType = nameof(EnemyData),
+                properties = new Dictionary<string, JsonElement>
+                {
+                    [Config.Game.Importer.KeyEntityName] = JsonValue("\"BrokenTiming\"")
+                },
+                hitboxes = new List<HitboxJson>(),
+                atlas = broken
+            };
+            string brokenPath = Path.Combine(tempRoot, "BrokenTiming" + Config.Game.Importer.ExtensionEFYV);
+            File.WriteAllText(brokenPath, JsonSerializer.Serialize(brokenDocument));
+            InvokeStatic(typeof(EFYVPixelArtImporter), "ImportEFYVAsset", brokenPath);
+            Equal(null, AssetDatabase.LoadAssetAtPath<SchemaBackedAssetData>(
+                Path.GetDirectoryName(brokenPath) + Config.Game.Importer.PathSeparator +
+                "BrokenTiming" + Config.Game.Importer.ExtensionAsset));
+            Equal(string.Format(
+                    Config.Game.Importer.LogErrorInvalidAtlas,
+                    brokenPath,
+                    EFYVBackend.Core.Export.AtlasMetadataError.AnimationFrameDurations),
+                Debug.Messages[^1]);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, true);
+        }
     }
 }

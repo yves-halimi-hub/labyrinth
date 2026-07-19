@@ -15,7 +15,10 @@ namespace EFYVLabyMake.Core.Tools
         public enum MovementType
         {
             ToonWalk = Config.Tool.Moving.ModeToonWalk,
-            ElementJitter = Config.Tool.Moving.ModeElementJitter
+            ElementJitter = Config.Tool.Moving.ModeElementJitter,
+            // Item #10 presets.
+            BobBreathe = Config.Tool.Moving.ModeBobBreathe,
+            ShakeHitFlash = Config.Tool.Moving.ModeShakeHitFlash
         }
         public MovementType ActiveMode 
         { 
@@ -70,10 +73,44 @@ namespace EFYVLabyMake.Core.Tools
             Data.SetJitterFrequency(index, val);
         }
         
-        public int JitterFrameCount 
-        { 
-            get => Data.JitterFrameCount; 
-            set => Data.JitterFrameCount = value; 
+        public int JitterFrameCount
+        {
+            get => Data.JitterFrameCount;
+            set => Data.JitterFrameCount = value;
+        }
+
+        // Bob/Breathe Controls (item #10)
+        public float BobAmplitude
+        {
+            get => Data.BobAmplitude;
+            set => Data.BobAmplitude = value;
+        }
+        public float BreatheAmplitude
+        {
+            get => Data.BreatheAmplitude;
+            set => Data.BreatheAmplitude = value;
+        }
+        public int BobFrameCount
+        {
+            get => Data.BobFrameCount;
+            set => Data.BobFrameCount = value;
+        }
+
+        // Shake/Hit-Flash Controls (item #10)
+        public float ShakeAmplitude
+        {
+            get => Data.ShakeAmplitude;
+            set => Data.ShakeAmplitude = value;
+        }
+        public float FlashStrength
+        {
+            get => Data.FlashStrength;
+            set => Data.FlashStrength = value;
+        }
+        public int ShakeFrameCount
+        {
+            get => Data.ShakeFrameCount;
+            set => Data.ShakeFrameCount = value;
         }
 
         public MovingTool()
@@ -93,6 +130,12 @@ namespace EFYVLabyMake.Core.Tools
             WalkStrideAmp = Config.Tool.Moving.DefaultWalkStrideAmp;
             WalkFrameCount = Config.Tool.Moving.DefaultWalkFrameCount;
             JitterFrameCount = Config.Tool.Moving.DefaultJitterFrameCount;
+            BobAmplitude = Config.Tool.Moving.DefaultBobAmp;
+            BreatheAmplitude = Config.Tool.Moving.DefaultBreatheAmp;
+            BobFrameCount = Config.Tool.Moving.DefaultBobFrameCount;
+            ShakeAmplitude = Config.Tool.Moving.DefaultShakeAmp;
+            FlashStrength = Config.Tool.Moving.DefaultFlashStrength;
+            ShakeFrameCount = Config.Tool.Moving.DefaultShakeFrameCount;
 
             // Set some default funky jitter defaults
             for (int i = Config.Common.FirstIndex; i < Config.Tool.Moving.JitterOctantCount; i++)
@@ -107,38 +150,54 @@ namespace EFYVLabyMake.Core.Tools
         {
             if (baseFrame == null) throw new System.ArgumentNullException(nameof(baseFrame));
 
-            AnimationState generated;
-            if (ActiveMode == MovementType.ToonWalk)
+            switch (ActiveMode)
             {
-                generated = generatorAPI.GenerateWalkAnimation(
-                    Config.Animation.WalkAnimName, 
-                    baseFrame, 
-                    WalkFrameCount, 
-                    WalkSplitY, 
-                    WalkBounceAmp, 
-                    WalkStrideAmp
-                );
-            }
-            else
-            {
-                float[] amplitudes = new float[Config.Tool.Moving.JitterOctantCount];
-                float[] frequencies = new float[Config.Tool.Moving.JitterOctantCount];
-                for (int i = Config.Common.FirstIndex; i < Config.Tool.Moving.JitterOctantCount; i++)
+                case MovementType.ToonWalk:
+                    return generatorAPI.GenerateWalkAnimation(
+                        Config.Animation.WalkAnimName,
+                        baseFrame,
+                        WalkFrameCount,
+                        WalkSplitY,
+                        WalkBounceAmp,
+                        WalkStrideAmp
+                    );
+                case MovementType.ElementJitter:
                 {
-                    amplitudes[i] = GetJitterAmplitude(i);
-                    frequencies[i] = GetJitterFrequency(i);
+                    float[] amplitudes = new float[Config.Tool.Moving.JitterOctantCount];
+                    float[] frequencies = new float[Config.Tool.Moving.JitterOctantCount];
+                    for (int i = Config.Common.FirstIndex; i < Config.Tool.Moving.JitterOctantCount; i++)
+                    {
+                        amplitudes[i] = GetJitterAmplitude(i);
+                        frequencies[i] = GetJitterFrequency(i);
+                    }
+
+                    return generatorAPI.GenerateJitterAnimation(
+                        Config.Animation.JitterAnimName,
+                        baseFrame,
+                        JitterFrameCount,
+                        amplitudes,
+                        frequencies
+                    );
                 }
-
-                generated = generatorAPI.GenerateJitterAnimation(
-                    Config.Animation.JitterAnimName,
-                    baseFrame,
-                    JitterFrameCount,
-                    amplitudes,
-                    frequencies
-                );
+                case MovementType.BobBreathe:
+                    return generatorAPI.GenerateBobAnimation(
+                        Config.Animation.BobAnimName,
+                        baseFrame,
+                        BobFrameCount,
+                        BobAmplitude,
+                        BreatheAmplitude
+                    );
+                case MovementType.ShakeHitFlash:
+                    return generatorAPI.GenerateShakeFlashAnimation(
+                        Config.Animation.ShakeAnimName,
+                        baseFrame,
+                        ShakeFrameCount,
+                        ShakeAmplitude,
+                        FlashStrength
+                    );
+                default:
+                    throw new System.ArgumentOutOfRangeException(nameof(ActiveMode));
             }
-
-            return generated;
         }
 
         public override void OnPointerDown(EFYVProject project, Frame currentFrame, int x, int y)

@@ -25,7 +25,7 @@ namespace EFYVBackend.Verification
                 TestImporterMalformedInputs(directory);
                 TestImporterValidEdges(directory);
                 TestSaveExactRoundTripAndCanaries(directory);
-                TestSaveTruncationAndPermissiveLegacyInputs(directory);
+                TestSaveTruncationAndCorruptionRejection(directory);
                 TestSaveFileAccessFailures(directory);
             }
             finally
@@ -140,9 +140,10 @@ namespace EFYVBackend.Verification
         {
             string path = Path.Combine(directory, "roundtrip.save");
             PlayerMetaSchema profile = CreatePatternedProfile();
-            byte[] expectedBytes = SaveStructBytes(profile);
+            byte[] expectedPayload = SaveStructBytes(profile);
+            byte[] expectedFile = SaveFileBytes(expectedPayload);
             int saveSize = sizeof(PlayerMetaSchema);
-            AssertEqual(saveSize, expectedBytes.Length);
+            AssertEqual(saveSize, expectedPayload.Length);
 
             SaveEnvelope envelope = new SaveEnvelope
             {
@@ -153,9 +154,9 @@ namespace EFYVBackend.Verification
             FastSaveEngine.SaveGame(path, ref envelope.Value);
             AssertEqual(SaveCanaryBefore, envelope.Before);
             AssertEqual(SaveCanaryAfter, envelope.After);
-            AssertSequenceEqual(expectedBytes, SaveStructBytes(envelope.Value));
-            AssertEqual((long)saveSize, new FileInfo(path).Length);
-            AssertSequenceEqual(expectedBytes, File.ReadAllBytes(path));
+            AssertSequenceEqual(expectedPayload, SaveStructBytes(envelope.Value));
+            AssertEqual((long)expectedFile.Length, new FileInfo(path).Length);
+            AssertSequenceEqual(expectedFile, File.ReadAllBytes(path));
 
             SaveEnvelope loadedEnvelope = new SaveEnvelope
             {
@@ -165,39 +166,33 @@ namespace EFYVBackend.Verification
             Assert(FastSaveEngine.LoadGame(path, out loadedEnvelope.Value));
             AssertEqual(SaveCanaryBefore, loadedEnvelope.Before);
             AssertEqual(SaveCanaryAfter, loadedEnvelope.After);
-            AssertSequenceEqual(expectedBytes, SaveStructBytes(loadedEnvelope.Value));
+            AssertSequenceEqual(expectedPayload, SaveStructBytes(loadedEnvelope.Value));
 
             loadedEnvelope.Value.TotalCoinsCollected = 123;
-            AssertSequenceEqual(expectedBytes, File.ReadAllBytes(path));
-            AssertSequenceEqual(expectedBytes, SaveStructBytes(profile));
+            AssertSequenceEqual(expectedFile, File.ReadAllBytes(path));
+            AssertSequenceEqual(expectedPayload, SaveStructBytes(profile));
 
-            byte[] oversizedOldFile = new byte[saveSize + 257];
+            byte[] oversizedOldFile = new byte[expectedFile.Length + 257];
             for (int i = 0; i < oversizedOldFile.Length; i++) oversizedOldFile[i] = 0xA5;
             File.WriteAllBytes(path, oversizedOldFile);
             FastSaveEngine.SaveGame(path, ref profile);
-            AssertEqual((long)saveSize, new FileInfo(path).Length);
-            AssertSequenceEqual(expectedBytes, File.ReadAllBytes(path));
+            AssertEqual((long)expectedFile.Length, new FileInfo(path).Length);
+            AssertSequenceEqual(expectedFile, File.ReadAllBytes(path));
         }
 
-        private static unsafe void TestSaveTruncationAndPermissiveLegacyInputs(string directory)
+        private static unsafe void TestSaveTruncationAndCorruptionRejection(string directory)
         {
             string path = Path.Combine(directory, "adversarial.save");
             PlayerMetaSchema profile = CreatePatternedProfile();
-            byte[] valid = SaveStructBytes(profile);
+            byte[] payload = SaveStructBytes(profile);
+            byte[] valid = SaveFileBytes(payload);
             byte[] defaultBytes = SaveStructBytes(PlayerMetaSchema.Default());
-            int[] truncatedLengths = { 0, 1, 3, 4, 255, valid.Length / 2, valid.Length - 1 };
+            int[] truncatedLengths = { 0, 1, 3, 4, 11, 12, 255, valid.Length / 2, valid.Length - 1 };
             for (int i = 0; i < truncatedLengths.Length; i++)
             {
                 int length = truncatedLengths[i];
                 byte[] truncated = new byte[length];
                 Buffer.BlockCopy(valid, 0, truncated, 0, length);
-                if (length >= 4)
-                {
-                    truncated[0] = 0xFF;
-                    truncated[1] = 0xFF;
-                    truncated[2] = 0xFF;
-                    truncated[3] = 0x7F;
-                }
                 File.WriteAllBytes(path, truncated);
                 SaveEnvelope result = NewPoisonedSaveEnvelope();
                 Assert(!FastSaveEngine.LoadGame(path, out result.Value));
@@ -218,27 +213,70 @@ namespace EFYVBackend.Verification
             Assert(!FastSaveEngine.LoadGame(directory, out PlayerMetaSchema directoryPath));
             AssertSequenceEqual(defaultBytes, SaveStructBytes(directoryPath));
 
-            // The raw legacy format has no checksum or length marker. Exact-size arbitrary bytes
-            // and trailing bytes are intentionally documented as accepted current behavior.
+            // The #19 envelope FLIPPED the old permissive legacy reads: raw
+            // header-less struct dumps, arbitrary exact-size bytes, trailing
+            // garbage, wrong magic, wrong version, and any flipped payload bit
+            // (CRC) are all rejected and restore the default profile.
+            byte[] legacyRaw = payload; // pre-envelope format: payload only
+            AssertSaveRejected(path, legacyRaw, defaultBytes);
+
             byte[] arbitrary = new byte[valid.Length];
             for (int i = 0; i < arbitrary.Length; i++) arbitrary[i] = (byte)(i * 197 + 31);
-            File.WriteAllBytes(path, arbitrary);
-            SaveEnvelope arbitraryResult = NewPoisonedSaveEnvelope();
-            Assert(FastSaveEngine.LoadGame(path, out arbitraryResult.Value));
-            AssertEqual(SaveCanaryBefore, arbitraryResult.Before);
-            AssertEqual(SaveCanaryAfter, arbitraryResult.After);
-            AssertSequenceEqual(arbitrary, SaveStructBytes(arbitraryResult.Value));
+            AssertSaveRejected(path, arbitrary, defaultBytes);
 
             byte[] withTrailingCanary = new byte[valid.Length + 64];
             Buffer.BlockCopy(valid, 0, withTrailingCanary, 0, valid.Length);
             for (int i = valid.Length; i < withTrailingCanary.Length; i++) withTrailingCanary[i] = 0xE7;
-            File.WriteAllBytes(path, withTrailingCanary);
-            SaveEnvelope trailingResult = NewPoisonedSaveEnvelope();
-            Assert(FastSaveEngine.LoadGame(path, out trailingResult.Value));
-            AssertEqual(SaveCanaryBefore, trailingResult.Before);
-            AssertEqual(SaveCanaryAfter, trailingResult.After);
-            AssertSequenceEqual(valid, SaveStructBytes(trailingResult.Value));
-            AssertSequenceEqual(withTrailingCanary, File.ReadAllBytes(path));
+            AssertSaveRejected(path, withTrailingCanary, defaultBytes);
+
+            byte[] wrongMagic = (byte[])valid.Clone();
+            wrongMagic[0] ^= 0x01;
+            AssertSaveRejected(path, wrongMagic, defaultBytes);
+
+            byte[] wrongVersion = (byte[])valid.Clone();
+            wrongVersion[4] ^= 0x01;
+            AssertSaveRejected(path, wrongVersion, defaultBytes);
+
+            byte[] wrongChecksum = (byte[])valid.Clone();
+            wrongChecksum[8] ^= 0x01;
+            AssertSaveRejected(path, wrongChecksum, defaultBytes);
+
+            Random random = new Random(0x5AFEC2C);
+            for (int i = 0; i < 8; i++)
+            {
+                byte[] corruptPayload = (byte[])valid.Clone();
+                int flippedIndex = 12 + random.Next(payload.Length);
+                corruptPayload[flippedIndex] ^= (byte)(1 << random.Next(8));
+                AssertSaveRejected(path, corruptPayload, defaultBytes);
+            }
+
+            // The pristine file still loads after the rejection gauntlet.
+            File.WriteAllBytes(path, valid);
+            Assert(FastSaveEngine.LoadGame(path, out PlayerMetaSchema restored));
+            AssertSequenceEqual(payload, SaveStructBytes(restored));
+        }
+
+        private static void AssertSaveRejected(string path, byte[] fileBytes, byte[] defaultBytes)
+        {
+            File.WriteAllBytes(path, fileBytes);
+            SaveEnvelope result = NewPoisonedSaveEnvelope();
+            Assert(!FastSaveEngine.LoadGame(path, out result.Value));
+            AssertEqual(SaveCanaryBefore, result.Before);
+            AssertEqual(SaveCanaryAfter, result.After);
+            AssertSequenceEqual(defaultBytes, SaveStructBytes(result.Value));
+            AssertSequenceEqual(fileBytes, File.ReadAllBytes(path));
+        }
+
+        // Independent model of the #19 save envelope (CRC via the bitwise
+        // reference implementation, not the product FastCrc32).
+        private static byte[] SaveFileBytes(byte[] payload)
+        {
+            byte[] file = new byte[BackendConfig.Save.HeaderSizeBytes + payload.Length];
+            BitConverter.GetBytes(BackendConfig.Save.MagicNumber).CopyTo(file, BackendConfig.Save.MagicOffset);
+            BitConverter.GetBytes((uint)BackendConfig.Save.FormatVersion).CopyTo(file, BackendConfig.Save.VersionOffset);
+            BitConverter.GetBytes(ComputeStandardPngCrc(payload)).CopyTo(file, BackendConfig.Save.ChecksumOffset);
+            payload.CopyTo(file, BackendConfig.Save.HeaderSizeBytes);
+            return file;
         }
 
         private static unsafe void TestSaveFileAccessFailures(string directory)
@@ -304,9 +342,12 @@ namespace EFYVBackend.Verification
         private static void AssertDefaultImport(EFYVJsonFormat value)
         {
             AssertEqual(null, value.assetType);
+            AssertEqual(null, value.baseAssetType);
             AssertEqual(null, value.properties);
             AssertEqual(null, value.hitboxes);
             Assert(!value.atlas.HasValue);
+            Assert(!value.documentVersion.HasValue);
+            AssertEqual(BackendConfig.Exporter.LegacyDocumentVersion, value.EffectiveDocumentVersion);
         }
 
         private static void TestExportAdversarial()
@@ -376,17 +417,18 @@ namespace EFYVBackend.Verification
                 File.Delete(fileAsRoot);
             }
 
+            // No identity property -> REJECT (#36). The old fallback minted a
+            // "<Type>_Export" stem that aliased every unnamed export of a type.
             string fallbackRoot = Path.Combine(root, "fallback");
-            FastExporter.PushToUnityLiveHook(
+            AssertThrows<ArgumentException>(() => FastExporter.PushToUnityLiveHook(
                 fallbackRoot,
                 "SafeType",
                 new Dictionary<string, object>(),
                 hitboxes,
                 pixel,
                 1,
-                1);
-            Assert(File.Exists(Path.Combine(fallbackRoot, "SafeType_Export.png")));
-            Assert(File.Exists(Path.Combine(fallbackRoot, "SafeType_Export" + BackendConfig.Exporter.EfyvExtension)));
+                1));
+            AssertNoExportFiles(fallbackRoot);
 
             string numericRoot = Path.Combine(root, "numeric-name");
             Dictionary<string, object> numericName = ExportProperties(123456789);
@@ -455,9 +497,11 @@ namespace EFYVBackend.Verification
             metadata = Metadata(3, 2, 1, 1);
             metadata.animations[0] = Animation("PastCapacity", 1, 5, 2);
             AssertInvalidMetadata(invalidRoot, properties, hitboxes, pixels, metadata, typeof(ArgumentException));
+            // The shared validator uses long math (#16b): an int.MaxValue start
+            // frame is plain past-capacity data, not an arithmetic overflow.
             metadata = Metadata(3, 2, 1, 1);
             metadata.animations[0] = Animation("Overflow", 1, int.MaxValue, 1);
-            AssertInvalidMetadata(invalidRoot, properties, hitboxes, pixels, metadata, typeof(OverflowException));
+            AssertInvalidMetadata(invalidRoot, properties, hitboxes, pixels, metadata, typeof(ArgumentException));
 
             metadata = Metadata(3, 2, 1, 1);
             metadata.animations = new List<AnimationMetadataJson>

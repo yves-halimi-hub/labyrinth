@@ -113,10 +113,19 @@ namespace EFYVBackend.Core.Math
                     throw new ArgumentOutOfRangeException(nameof(amplitudes));
                 if (float.IsNaN(frequencies[i]) || float.IsInfinity(frequencies[i]))
                     throw new ArgumentOutOfRangeException(nameof(frequencies));
-                float phase = timeT * frequencies[i];
-                if (float.IsInfinity(phase)) throw new ArgumentOutOfRangeException(nameof(frequencies));
-                float rad = FastMath.WrapRadians(phase * BackendConfig.Math.TwoPI - BackendConfig.Math.PI);
+                // Validate the POST-multiplication phase: finite inputs can still overflow to
+                // infinity after the TwoPI multiplication (e.g. frequency = float.MaxValue),
+                // which used to wrap into NaN offsets and silently wipe the whole frame to
+                // transparent through the runtime-defined (int)NaN truncation.
+                float phaseRad = timeT * frequencies[i] * BackendConfig.Math.TwoPI - BackendConfig.Math.PI;
+                if (float.IsNaN(phaseRad) || float.IsInfinity(phaseRad))
+                    throw new ArgumentOutOfRangeException(nameof(frequencies));
+                float rad = FastMath.WrapRadians(phaseRad);
                 frameOffsets[i] = FastMath.FastSinApproxNormalized(rad) * amplitudes[i];
+                // Defensive final-offset validation (the sine approximation can slightly
+                // exceed |1|, so a float.MaxValue amplitude could overflow the product).
+                if (float.IsNaN(frameOffsets[i]) || float.IsInfinity(frameOffsets[i]))
+                    throw new ArgumentOutOfRangeException(nameof(amplitudes));
             }
 
             uint* destPtr = dest;
@@ -157,6 +166,129 @@ namespace EFYVBackend.Core.Math
                     {
                         *destPtr = BackendConfig.Deformation.TransparentPixel;
                     }
+                    destPtr++;
+                }
+            }
+        }
+
+        // ---------------------------------------------------------
+        // BOB / BREATHE (item #10 preset)
+        // One sine cycle of vertical bob (translation) plus an optional
+        // "breathe" vertical squash-and-stretch anchored at the bottom row
+        // (feet stay planted). timeT = 0 is the identity frame.
+        // ---------------------------------------------------------
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe void GenerateBobBreatheFrame(
+            uint* src, uint* dest, int width, int height,
+            float timeT,
+            float bobAmp,     // vertical translation amplitude in pixels
+            float breatheAmp  // vertical scale amplitude, |amp| <= MaxBreatheAmplitude
+        )
+        {
+            if (src == null) throw new ArgumentNullException(nameof(src));
+            if (dest == null) throw new ArgumentNullException(nameof(dest));
+            if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width));
+            if (height <= 0) throw new ArgumentOutOfRangeException(nameof(height));
+            if (timeT < BackendConfig.Math.NormalizedMin || timeT > BackendConfig.Math.NormalizedMax || float.IsNaN(timeT))
+                throw new ArgumentOutOfRangeException(nameof(timeT));
+            if (float.IsNaN(bobAmp) || float.IsInfinity(bobAmp)) throw new ArgumentOutOfRangeException(nameof(bobAmp));
+            if (float.IsNaN(breatheAmp) ||
+                breatheAmp < -BackendConfig.Deformation.MaxBreatheAmplitude ||
+                breatheAmp > BackendConfig.Deformation.MaxBreatheAmplitude)
+                throw new ArgumentOutOfRangeException(nameof(breatheAmp));
+
+            float rad = FastMath.WrapRadians(timeT * BackendConfig.Math.TwoPI - BackendConfig.Math.PI);
+            float wave = FastMath.FastSinApproxNormalized(rad);
+            float bobOffset = wave * bobAmp;
+            // The breathe cap guarantees the scale stays strictly positive.
+            float scaleY = BackendConfig.Math.NormalizedMax + wave * breatheAmp;
+            int anchorY = height - 1;
+
+            uint* destPtr = dest;
+            for (int y = 0; y < height; y++)
+            {
+                // Inverse mapping: which source row shows at destination row y.
+                int srcY = anchorY + (int)((y - anchorY + bobOffset) / scaleY);
+                if ((uint)srcY < (uint)height)
+                {
+                    uint* srcRow = src + (srcY * width);
+                    for (int x = 0; x < width; x++)
+                    {
+                        *destPtr = *(srcRow + x);
+                        destPtr++;
+                    }
+                }
+                else
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        *destPtr = BackendConfig.Deformation.TransparentPixel;
+                        destPtr++;
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------
+        // SHAKE / HIT-FLASH (item #10 preset)
+        // Horizontal shake (ShakeOscillations sine cycles) and a white flash,
+        // both decaying linearly over the cycle: the flash is strongest at
+        // timeT = 0 (the impact) and both vanish as timeT approaches 1.
+        // ---------------------------------------------------------
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe void GenerateShakeFlashFrame(
+            uint* src, uint* dest, int width, int height,
+            float timeT,
+            float shakeAmp,      // horizontal shake amplitude in pixels
+            float flashStrength  // white-flash strength at impact, [0, 1]
+        )
+        {
+            if (src == null) throw new ArgumentNullException(nameof(src));
+            if (dest == null) throw new ArgumentNullException(nameof(dest));
+            if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width));
+            if (height <= 0) throw new ArgumentOutOfRangeException(nameof(height));
+            if (timeT < BackendConfig.Math.NormalizedMin || timeT > BackendConfig.Math.NormalizedMax || float.IsNaN(timeT))
+                throw new ArgumentOutOfRangeException(nameof(timeT));
+            if (float.IsNaN(shakeAmp) || float.IsInfinity(shakeAmp)) throw new ArgumentOutOfRangeException(nameof(shakeAmp));
+            if (float.IsNaN(flashStrength) ||
+                flashStrength < BackendConfig.Math.NormalizedMin ||
+                flashStrength > BackendConfig.Math.NormalizedMax)
+                throw new ArgumentOutOfRangeException(nameof(flashStrength));
+
+            float decay = BackendConfig.Math.NormalizedMax - timeT;
+            float phase = FastMath.WrapRadians(
+                timeT * BackendConfig.Deformation.ShakeOscillations * BackendConfig.Math.TwoPI - BackendConfig.Math.PI);
+            int shakeOffset = (int)(FastMath.FastSinApproxNormalized(phase) * shakeAmp * decay);
+            // Fixed-point flash numerator (0..255): c' = c + (255 - c) * flash / 255.
+            int flashNumerator = (int)(flashStrength * decay * BackendConfig.Math.ColorMaxByte);
+
+            uint* destPtr = dest;
+            for (int y = 0; y < height; y++)
+            {
+                uint* srcRow = src + (y * width);
+                for (int x = 0; x < width; x++)
+                {
+                    int srcX = x - shakeOffset;
+                    uint pixel = (uint)srcX < (uint)width
+                        ? *(srcRow + srcX)
+                        : BackendConfig.Deformation.TransparentPixel;
+
+                    uint alpha = (pixel >> BackendConfig.Pixel.AlphaShift) & BackendConfig.Math.ColorMaxByte;
+                    if (flashNumerator > 0 && alpha != BackendConfig.Pixel.TransparentAlpha)
+                    {
+                        uint red = pixel & BackendConfig.Math.ColorMaxByte;
+                        uint green = (pixel >> BackendConfig.Pixel.GreenShift) & BackendConfig.Math.ColorMaxByte;
+                        uint blue = (pixel >> BackendConfig.Pixel.BlueShift) & BackendConfig.Math.ColorMaxByte;
+                        red += (uint)(((BackendConfig.Math.ColorMaxByte - red) * (uint)flashNumerator) / BackendConfig.Math.ColorMaxByte);
+                        green += (uint)(((BackendConfig.Math.ColorMaxByte - green) * (uint)flashNumerator) / BackendConfig.Math.ColorMaxByte);
+                        blue += (uint)(((BackendConfig.Math.ColorMaxByte - blue) * (uint)flashNumerator) / BackendConfig.Math.ColorMaxByte);
+                        pixel = red |
+                            (green << BackendConfig.Pixel.GreenShift) |
+                            (blue << BackendConfig.Pixel.BlueShift) |
+                            (alpha << BackendConfig.Pixel.AlphaShift);
+                    }
+
+                    *destPtr = pixel;
                     destPtr++;
                 }
             }

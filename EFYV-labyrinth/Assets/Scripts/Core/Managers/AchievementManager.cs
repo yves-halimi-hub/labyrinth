@@ -14,6 +14,73 @@ namespace EFYV.Core.Managers
         public delegate void OnAchievementUnlockedHandler(LegacyAchievementDefinition achievement);
         public event OnAchievementUnlockedHandler OnAchievementUnlocked;
 
+        // ------------------------------------------------------------------
+        // Event-driven gameplay triggers (#34), ticked centrally with O(1)
+        // threshold checks - no per-frame string operations. The id/threshold
+        // tables mirror the shipped basis database (see
+        // GameConfig.Achievements.BasisData): ids 0-4 are the kill ladder
+        // ("First Blood".."Labyrinth Cleaner"), ids 18/19 are the survival pair
+        // ("Unstoppable" 10 min, "Immortal" 30 min).
+        // The tables live in the shared config (Achievements.Triggers); these
+        // fields alias them. Kill counts are per-session (PlayerMetaSchema has
+        // no lifetime kill slot yet) - deferred as a backend schema change.
+        // ------------------------------------------------------------------
+        private static readonly int[] KillThresholds = GameConfig.Achievements.Triggers.KillThresholds;
+        private static readonly int[] KillAchievementIds = GameConfig.Achievements.Triggers.KillAchievementIds;
+        private static readonly float[] SurvivalThresholdSeconds = GameConfig.Achievements.Triggers.SurvivalThresholdSeconds;
+        private static readonly int[] SurvivalAchievementIds = GameConfig.Achievements.Triggers.SurvivalAchievementIds;
+
+        private int sessionKillCount;
+        private int nextKillThresholdIndex;
+        private int nextSurvivalThresholdIndex;
+
+        public int SessionKillCount => sessionKillCount;
+
+        protected override void Awake()
+        {
+            base.Awake();
+            // #24: OnValidate never runs in player builds, so the serialized
+            // definition fields are re-synced into their packed Data blocks
+            // (id, title/description hashes) on startup.
+            if (IsSingletonInstance && achievementDatabase != null)
+            {
+                achievementDatabase.SyncAllDefinitions();
+            }
+        }
+
+        /// <summary>
+        /// Kill-count trigger (#34). Called once per enemy death from
+        /// DropManager.DropLoot (the central death seam). Consumes no PRNG state.
+        /// </summary>
+        public void NotifyEnemyKilled()
+        {
+            if (sessionKillCount < int.MaxValue) sessionKillCount++;
+            if (SaveManager.Instance == null) return; // Unlock storage unavailable.
+
+            while (nextKillThresholdIndex < KillThresholds.Length &&
+                sessionKillCount >= KillThresholds[nextKillThresholdIndex])
+            {
+                UnlockAchievement(KillAchievementIds[nextKillThresholdIndex]);
+                nextKillThresholdIndex++;
+            }
+        }
+
+        /// <summary>
+        /// Survival-time trigger (#34). Called per frame by SpawnManager.Update
+        /// with the central game timer; each call is a bounded float comparison.
+        /// </summary>
+        public void NotifySurvivalTime(float survivalSeconds)
+        {
+            if (SaveManager.Instance == null) return; // Unlock storage unavailable.
+
+            while (nextSurvivalThresholdIndex < SurvivalThresholdSeconds.Length &&
+                survivalSeconds >= SurvivalThresholdSeconds[nextSurvivalThresholdIndex])
+            {
+                UnlockAchievement(SurvivalAchievementIds[nextSurvivalThresholdIndex]);
+                nextSurvivalThresholdIndex++;
+            }
+        }
+
         /// <summary>
         /// Instantly checks if an achievement is unlocked using the O(1) FastSchemaBlock memory space.
         /// </summary>

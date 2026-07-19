@@ -1,6 +1,6 @@
 using UnityEngine;
-using EFYV.Core.Weapons.Types;
 using EFYV.Core.Entities;
+using EFYV.Core.Utils;
 using EFYVBackend.Core.Collections;
 using GameConfig = EFYVBackend.Core.Data.EFYVLabyrinthConfig.Game;
 
@@ -9,6 +9,10 @@ namespace EFYV.Core.Weapons.Implementations
     // The base linear projectile type
     public abstract class ProjectileWeapon : Weapon
     {
+        // Preferred wiring (MagicWandWeapon pattern): a typed prefab reference that
+        // registers its own pool through PoolManager.Spawn on first use.
+        public Projectile projectilePrefab;
+
         public float projectileSpeed
         {
             get => Data.ProjectileSpeed;
@@ -21,6 +25,8 @@ namespace EFYV.Core.Weapons.Implementations
             set => Data.PierceCount = value;
         }
 
+        // Legacy schema wiring: an already-registered pool key. Only consulted when
+        // no typed prefab is assigned.
         public int projectilePrefabKey
         {
             get => Data.ProjectilePrefabKey;
@@ -32,30 +38,59 @@ namespace EFYV.Core.Weapons.Implementations
             base.Awake();
             projectileSpeed = GameConfig.Weapons.Projectile.DefaultSpeed;
             basePierceCount = GameConfig.Weapons.Projectile.DefaultPierce;
+
+            // #32: fill the projectile pool up-front so the first volley never
+            // hitches on Instantiate. No-op when the prefab is unassigned (the
+            // legacy key path's pool is owned by whoever registered the key) or
+            // when no PoolManager exists yet; populate-up-to-target keeps
+            // repeated weapon grants idempotent.
+            Managers.PoolManager.TryPrewarm(projectilePrefab, GameConfig.Pool.ProjectilePrewarmCount);
         }
 
         public override void Fire()
         {
-            // Simple logic: shoot towards the closest enemy
-            var activeEnemies = Enemy.ActiveEnemies;
-            if (activeEnemies.Count == GameConfig.Runtime.EmptyCollectionCount) return;
+            // Faction-aware targeting: player-owned weapons aim at the nearest
+            // packed-list enemy, enemy-owned weapons aim at the player.
+            Vector3 origin = transform.position;
+            if (!TryGetTargetPosition(origin, out Vector3 targetPosition)) return;
 
-            // The packed list supplies a deterministic fallback target.
-            var target = activeEnemies[GameConfig.Runtime.FirstIndex];
-
-            Vector3 myPos = transform.position;
-            Vector3 direction = (target.entityTransform.position - myPos).normalized;
-
-            // Pull a projectile from the fast C-optimized Object Pool
-            var projObj = Managers.PoolManager.Instance.SpawnByKey(projectilePrefabKey, myPos, Quaternion.identity);
-            if (projObj != null)
+            Projectile proj;
+            if (projectilePrefab != null)
             {
-                var proj = projObj as Projectile;
-                if (proj != null)
-                {
-                    proj.Initialize(direction, BaseDamage, projectileSpeed, basePierceCount);
-                }
+                Managers.PoolManager pool = Managers.PoolManager.Instance;
+                if (pool == null) return;
+
+                // Typed prefab path: the pool key derives from the prefab itself, so
+                // the rented entity is a Projectile by construction.
+                proj = pool.Spawn(projectilePrefab, origin, Quaternion.identity) as Projectile;
             }
+            else
+            {
+                // Key path: type-check the pooled entry BEFORE activating it so a
+                // mis-keyed pool entry is returned unharmed instead of being spawned
+                // uninitialized and leaked.
+                GameEntity rented = FastPoolRegistry<GameEntity>.Rent(projectilePrefabKey);
+                if (rented == null) return;
+
+                proj = rented as Projectile;
+                if (proj == null)
+                {
+                    FastPoolRegistry<GameEntity>.Return(projectilePrefabKey, rented);
+                    return;
+                }
+
+                Transform projectileTransform = proj.transform;
+                projectileTransform.position = origin;
+                projectileTransform.rotation = Quaternion.identity;
+                proj.OnSpawn();
+            }
+
+            if (proj == null) return;
+
+            // MIGRATION: Bypassed Unity's standard floating-point normalization
+            Vector2 diff = targetPosition - origin;
+            Vector2 direction = diff.FastNormalized();
+            proj.Initialize(direction, BaseDamage, projectileSpeed, basePierceCount, OwnerFaction);
         }
     }
 

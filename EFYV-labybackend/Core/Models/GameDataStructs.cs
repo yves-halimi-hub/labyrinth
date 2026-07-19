@@ -148,10 +148,27 @@ namespace EFYVBackend.Core.Models
         }
         private string _stateName;
         
-        public int FPS 
-        { 
-            get => Block.GetInt((int)AnimationStateSchema.FPS); 
-            set => Block.SetInt((int)AnimationStateSchema.FPS, value); 
+        public int FPS
+        {
+            get => Block.GetInt((int)AnimationStateSchema.FPS);
+            set => Block.SetInt((int)AnimationStateSchema.FPS, value);
+        }
+
+        // Item #10 playback tags. LoopEndFrame -1 means "the last frame".
+        public int LoopStartFrame
+        {
+            get => Block.GetInt((int)AnimationStateSchema.LoopStartFrame);
+            set => Block.SetInt((int)AnimationStateSchema.LoopStartFrame, value);
+        }
+        public int LoopEndFrame
+        {
+            get => Block.GetInt((int)AnimationStateSchema.LoopEndFrame);
+            set => Block.SetInt((int)AnimationStateSchema.LoopEndFrame, value);
+        }
+        public bool PingPong
+        {
+            get => Block.GetInt((int)AnimationStateSchema.PingPong) == BackendConfig.Serialization.TrueValue;
+            set => Block.SetInt((int)AnimationStateSchema.PingPong, value ? BackendConfig.Serialization.TrueValue : BackendConfig.Serialization.FalseValue);
         }
     }
 
@@ -185,10 +202,17 @@ namespace EFYVBackend.Core.Models
     public struct FrameData
     {
         public FastSchemaBlock Block;
-        public int FrameIndex 
-        { 
-            get => Block.GetInt((int)FrameSchema.FrameIndex); 
-            set => Block.SetInt((int)FrameSchema.FrameIndex, value); 
+        public int FrameIndex
+        {
+            get => Block.GetInt((int)FrameSchema.FrameIndex);
+            set => Block.SetInt((int)FrameSchema.FrameIndex, value);
+        }
+
+        // Item #10 per-frame duration override (milliseconds); 0 inherits FPS.
+        public int DurationMs
+        {
+            get => Block.GetInt((int)FrameSchema.DurationMs);
+            set => Block.SetInt((int)FrameSchema.DurationMs, value);
         }
     }
 
@@ -272,11 +296,44 @@ namespace EFYVBackend.Core.Models
         public float WalkBounceAmp { get => Block.GetFloat((int)MovingToolSchema.WalkBounceAmp); set => Block.SetFloat((int)MovingToolSchema.WalkBounceAmp, value); }
         public float WalkStrideAmp { get => Block.GetFloat((int)MovingToolSchema.WalkStrideAmp); set => Block.SetFloat((int)MovingToolSchema.WalkStrideAmp, value); }
         public int WalkFrameCount { get => Block.GetInt((int)MovingToolSchema.WalkFrameCount); set => Block.SetInt((int)MovingToolSchema.WalkFrameCount, value); }
-        public float GetJitterAmplitude(int index) => Block.GetFloat((int)MovingToolSchema.JitterAmplitudesStart + index);
-        public void SetJitterAmplitude(int index, float val) => Block.SetFloat((int)MovingToolSchema.JitterAmplitudesStart + index, val);
-        public float GetJitterFrequency(int index) => Block.GetFloat((int)MovingToolSchema.JitterFrequenciesStart + index);
-        public void SetJitterFrequency(int index, float val) => Block.SetFloat((int)MovingToolSchema.JitterFrequenciesStart + index, val);
+        // The jitter accessors validate the octant index themselves: an out-of-range index
+        // used to silently alias sibling slots (amplitude 8 overwrote frequency 0, index -1
+        // clobbered JitterFrameCount) or reach past the fixed schema block entirely.
+        public float GetJitterAmplitude(int index)
+        {
+            ValidateJitterOctantIndex(index);
+            return Block.GetFloat((int)MovingToolSchema.JitterAmplitudesStart + index);
+        }
+        public void SetJitterAmplitude(int index, float val)
+        {
+            ValidateJitterOctantIndex(index);
+            Block.SetFloat((int)MovingToolSchema.JitterAmplitudesStart + index, val);
+        }
+        public float GetJitterFrequency(int index)
+        {
+            ValidateJitterOctantIndex(index);
+            return Block.GetFloat((int)MovingToolSchema.JitterFrequenciesStart + index);
+        }
+        public void SetJitterFrequency(int index, float val)
+        {
+            ValidateJitterOctantIndex(index);
+            Block.SetFloat((int)MovingToolSchema.JitterFrequenciesStart + index, val);
+        }
         public int JitterFrameCount { get => Block.GetInt((int)MovingToolSchema.JitterFrameCount); set => Block.SetInt((int)MovingToolSchema.JitterFrameCount, value); }
+
+        // Item #10 preset gauges (bob/breathe + shake/hit-flash).
+        public float BobAmplitude { get => Block.GetFloat((int)MovingToolSchema.BobAmplitude); set => Block.SetFloat((int)MovingToolSchema.BobAmplitude, value); }
+        public float BreatheAmplitude { get => Block.GetFloat((int)MovingToolSchema.BreatheAmplitude); set => Block.SetFloat((int)MovingToolSchema.BreatheAmplitude, value); }
+        public int BobFrameCount { get => Block.GetInt((int)MovingToolSchema.BobFrameCount); set => Block.SetInt((int)MovingToolSchema.BobFrameCount, value); }
+        public float ShakeAmplitude { get => Block.GetFloat((int)MovingToolSchema.ShakeAmplitude); set => Block.SetFloat((int)MovingToolSchema.ShakeAmplitude, value); }
+        public float FlashStrength { get => Block.GetFloat((int)MovingToolSchema.FlashStrength); set => Block.SetFloat((int)MovingToolSchema.FlashStrength, value); }
+        public int ShakeFrameCount { get => Block.GetInt((int)MovingToolSchema.ShakeFrameCount); set => Block.SetInt((int)MovingToolSchema.ShakeFrameCount, value); }
+
+        private static void ValidateJitterOctantIndex(int index)
+        {
+            if ((uint)index >= BackendConfig.Deformation.OctantCount)
+                throw new System.ArgumentOutOfRangeException(nameof(index));
+        }
     }
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Pack = BackendConfig.Serialization.SequentialPack)]

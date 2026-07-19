@@ -56,6 +56,11 @@ namespace UnityEngine
 
         public int GetInstanceID() => instanceId;
 
+        // Unity 6.6 replacement for the deprecated GetInstanceID (CS0619 in
+        // 6000.6.0b4). Real EntityId converts implicitly to int; the stub
+        // returns the same monotonic id so pool keys stay stable either way.
+        public int GetEntityId() => instanceId;
+
         public static T Instantiate<T>(T original) where T : Object
         {
             return (T)TestRuntime.CloneObject(original, null);
@@ -73,12 +78,42 @@ namespace UnityEngine
 
         public static void DontDestroyOnLoad(Object target) { }
 
+        // Monotonic instrumentation counter (batch2/game-managers agent): tests
+        // assert deltas to prove hot paths negative-cache scene sweeps (#24,
+        // Singleton.TryGetInstance) instead of re-scanning per call. Never reset;
+        // compare before/after snapshots only (mirrors GetComponentCalls).
+        public static long FindObjectOfTypeCalls;
+
         public static T FindObjectOfType<T>() where T : Object
         {
+            FindObjectOfTypeCalls++;
             return Resources.FindObjectsOfTypeAll<T>().FirstOrDefault(item => !item.IsDestroyed);
         }
 
         public static T[] FindObjectsOfType<T>() where T : Object
+        {
+            return Resources.FindObjectsOfTypeAll<T>().Where(item => !item.IsDestroyed).ToArray();
+        }
+
+        // Unity 6 replacements for the CS0618-deprecated finders. The counter is
+        // shared with FindObjectOfTypeCalls so negative-cache tests keep working
+        // unchanged whichever entry point product code uses.
+        public static T FindFirstObjectByType<T>() where T : Object
+        {
+            FindObjectOfTypeCalls++;
+            return Resources.FindObjectsOfTypeAll<T>().FirstOrDefault(item => !item.IsDestroyed);
+        }
+
+        // Unity 6.6 deprecates FindFirstObjectByType as well (instance-ID-ordering
+        // dependent); FindAnyObjectByType is the recommended replacement and the
+        // one product code uses.
+        public static T FindAnyObjectByType<T>() where T : Object
+        {
+            FindObjectOfTypeCalls++;
+            return Resources.FindObjectsOfTypeAll<T>().FirstOrDefault(item => !item.IsDestroyed);
+        }
+
+        public static T[] FindObjectsByType<T>() where T : Object
         {
             return Resources.FindObjectsOfTypeAll<T>().Where(item => !item.IsDestroyed).ToArray();
         }
@@ -167,8 +202,14 @@ namespace UnityEngine
             return component;
         }
 
+        // Monotonic instrumentation counter: tests assert deltas to prove hot paths
+        // memoize component lookups (e.g. the Projectile trigger memo) instead of
+        // re-scanning per call. Never reset; compare before/after snapshots only.
+        public static long GetComponentCalls;
+
         public T GetComponent<T>()
         {
+            GetComponentCalls++;
             Type requested = typeof(T);
             for (int index = 0; index < components.Count; index++)
             {
@@ -252,6 +293,24 @@ namespace UnityEngine
         public Color(float r, float g, float b, float a = 1f) { this.r = r; this.g = g; this.b = b; this.a = a; }
         public static Color cyan => new Color(0f, 1f, 1f);
         public static Color magenta => new Color(1f, 0f, 1f);
+        // batch3.4 agent (item #7): additive members for authored effect colors.
+        public static Color white => new Color(1f, 1f, 1f);
+        public static Color Lerp(Color a, Color b, float t)
+        {
+            t = Mathf.Clamp01(t);
+            return new Color(
+                a.r + (b.r - a.r) * t,
+                a.g + (b.g - a.g) * t,
+                a.b + (b.b - a.b) * t,
+                a.a + (b.a - a.a) * t);
+        }
+    }
+
+    // batch2/unity-project agent: additive member for GameBootstrap placeholder art.
+    public struct Color32
+    {
+        public byte r, g, b, a;
+        public Color32(byte r, byte g, byte b, byte a) { this.r = r; this.g = g; this.b = b; this.a = a; }
     }
 
     public static class Mathf
@@ -289,11 +348,33 @@ namespace UnityEngine
         public static void LogWarningFormat(string format, params object[] args) => Messages.Add(string.Format(format, args));
     }
 
-    public class Sprite : Object { }
+    public class Sprite : Object
+    {
+        // batch2/unity-project agent: additive members for GameBootstrap sprite generation.
+        public Texture2D texture { get; private set; }
+        public Rect rect { get; private set; }
+        public Vector2 pivot { get; private set; }
+        public float pixelsPerUnit { get; private set; }
+
+        public static Sprite Create(Texture2D texture, Rect rect, Vector2 pivot, float pixelsPerUnit)
+        {
+            var sprite = new Sprite
+            {
+                texture = texture,
+                rect = rect,
+                pivot = pivot,
+                pixelsPerUnit = pixelsPerUnit,
+            };
+            TestRuntime.Register(sprite);
+            return sprite;
+        }
+    }
 
     public class SpriteRenderer : Component
     {
         public Sprite sprite;
+        // batch3.4 agent (item #7): authored flash/tint effects recolor here.
+        public Color color = Color.white;
     }
 
     public class Camera : Behaviour
@@ -304,6 +385,15 @@ namespace UnityEngine
     }
 
     public class Collider2D : Component { }
+
+    // Item #14: LivingEntity syncs the designer Hurtbox onto this collider's
+    // offset/size (local units); tests inspect those fields after a sync.
+    public class BoxCollider2D : Collider2D
+    {
+        public Vector2 offset;
+        public Vector2 size;
+    }
+
     public class Collision2D
     {
         public GameObject gameObject;
@@ -324,6 +414,11 @@ namespace UnityEngine
         }
         public void ReadPixels(Rect rect, int x, int y) { }
         public void Apply(bool updateMipmaps) { }
+        // batch2/unity-project agent: additive members for GameBootstrap sprite generation.
+        public FilterMode filterMode;
+        private Color32[] pixels32;
+        public void SetPixels32(Color32[] colors) => pixels32 = colors;
+        public Color32[] GetPixels32() => pixels32;
         public Unity.Collections.NativeArray<T> GetRawTextureData<T>() where T : unmanaged
         {
             if (!(rawData is T[] values))
@@ -370,6 +465,30 @@ namespace UnityEngine
         public static void DrawWireCube(Vector3 center, Vector3 size) => Cubes.Add((center, size));
     }
 
+    // Item #4: minimal IMGUI surface so the editor-only EFYVSpawnPaletteWindow
+    // COMPILES in the headless harness (its list/selection logic lives in the
+    // plain SpawnPaletteModel, which is what the tests exercise). These are
+    // no-op signature stubs, never driven by a test.
+    public sealed class GUIContent
+    {
+        public string text;
+        public GUIContent() { }
+        public GUIContent(string text) { this.text = text; }
+    }
+
+    public sealed class GUIStyle { }
+
+    public static class GUILayout
+    {
+        public static bool Button(string text) => false;
+        public static void Label(string text) { }
+        public static void Space(float pixels) { }
+        public static void BeginHorizontal() { }
+        public static void EndHorizontal() { }
+        public static void BeginVertical() { }
+        public static void EndVertical() { }
+    }
+
     public static class TestRuntime
     {
         internal static readonly List<Object> Objects = new List<Object>();
@@ -402,12 +521,29 @@ namespace UnityEngine
             }
             if (original is Component sourceComponent)
             {
-                var cloneObject = new GameObject((sourceComponent.gameObject?.name ?? sourceComponent.GetType().Name) + "(Clone)");
-                Component destination = cloneObject.AddComponent(sourceComponent.GetType(), false);
-                CopyFields(sourceComponent, destination);
-                cloneObject.transform.SetParent(parent);
-                InvokeLifecycle(destination, "Awake");
-                return destination;
+                // Unity's Instantiate(component) duplicates the WHOLE GameObject
+                // (every sibling component) and returns the clone's component of
+                // the requested type. Mirror that so pooled clones keep their
+                // SpriteRenderer / collider siblings - the item #13 runtime
+                // flipbook and item #14 hurtbox sync read those on the clone.
+                GameObject sourceObject = sourceComponent.gameObject;
+                if (sourceObject == null)
+                {
+                    var loneObject = new GameObject(sourceComponent.GetType().Name + "(Clone)");
+                    Component lone = loneObject.AddComponent(sourceComponent.GetType(), false);
+                    CopyFields(sourceComponent, lone);
+                    loneObject.transform.SetParent(parent);
+                    InvokeLifecycle(lone, "Awake");
+                    return lone;
+                }
+
+                var clonedObject = (GameObject)CloneObject(sourceObject, parent);
+                Type requested = sourceComponent.GetType();
+                foreach (Component candidate in clonedObject.Components)
+                {
+                    if (candidate.GetType() == requested) return candidate;
+                }
+                return null;
             }
             if (original is ScriptableObject)
             {
@@ -444,7 +580,7 @@ namespace UnityEngine
             {
                 foreach (FieldInfo field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
                 {
-                    if (field.IsStatic || field.Name == "gameObject") continue;
+                    if (field.IsStatic || field.Name == "gameObject" || field.Name == "<gameObject>k__BackingField") continue;
                     field.SetValue(destination, field.GetValue(source));
                 }
             }
@@ -578,6 +714,9 @@ namespace UnityEditor
         private static readonly Dictionary<string, Object> mainAssets = new Dictionary<string, Object>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, Object[]> allAssets = new Dictionary<string, Object[]>(StringComparer.OrdinalIgnoreCase);
         public static readonly List<(string Path, ImportAssetOptions Options)> Imports = new List<(string, ImportAssetOptions)>();
+        // Item #27: counts SaveAssets() calls so tests can pin that the batch
+        // postprocessor coalesces to ONE flush per group.
+        public static int SaveAssetsCount { get; private set; }
 
         public static T LoadAssetAtPath<T>(string path) where T : Object
         {
@@ -585,12 +724,18 @@ namespace UnityEditor
         }
 
         public static void CreateAsset(Object asset, string path) => mainAssets[path] = asset;
-        public static void SaveAssets() { }
+        public static void SaveAssets() => SaveAssetsCount++;
+        // Item #4: signature stubs for the spawn-palette window's editor-only
+        // asset discovery (never driven by a test; the palette MODEL is what the
+        // harness exercises).
+        public static string[] FindAssets(string filter) => Array.Empty<string>();
+        public static string[] FindAssets(string filter, string[] searchInFolders) => Array.Empty<string>();
+        public static string GUIDToAssetPath(string guid) => null;
         public static void ImportAsset(string path, ImportAssetOptions options) => Imports.Add((path, options));
         public static Object[] LoadAllAssetsAtPath(string path) => path != null && allAssets.TryGetValue(path, out Object[] values) ? values : Array.Empty<Object>();
         public static void SetAllAssetsAtPath(string path, params Object[] values) => allAssets[path] = values ?? Array.Empty<Object>();
         public static void SetMainAsset(string path, Object value) => mainAssets[path] = value;
-        internal static void Reset() { mainAssets.Clear(); allAssets.Clear(); Imports.Clear(); }
+        internal static void Reset() { mainAssets.Clear(); allAssets.Clear(); Imports.Clear(); SaveAssetsCount = 0; }
     }
 
     public static class EditorUtility
@@ -609,11 +754,57 @@ namespace UnityEditor
             delayCall = null;
             pending?.Invoke();
         }
-        internal static void Reset() { isPlaying = false; delayCall = null; }
+        internal static void Reset() { isPlaying = false; delayCall = null; timeSinceStartup = 0d; }
+
+        // b2-pipeline-contract agent: minimal additive stubs for the RawArt
+        // watcher ([InitializeOnLoad] poller over EditorApplication.update).
+        public static double timeSinceStartup;
+        public static event Action update;
+        public static void InvokeUpdate()
+        {
+            update?.Invoke();
+        }
+    }
+
+    // b2-pipeline-contract agent: additive stub for editor classes that hook
+    // EditorApplication.update at load time.
+    [AttributeUsage(AttributeTargets.Class)]
+    public sealed class InitializeOnLoadAttribute : Attribute { }
+
+    // Item #4: minimal EditorWindow / IMGUI surface so EFYVSpawnPaletteWindow
+    // COMPILES in the headless harness. The window is never instantiated by a
+    // test - its list/selection state machine lives in the plain
+    // SpawnPaletteModel, which is what the tests exercise.
+    public enum MessageType { None, Info, Warning, Error }
+
+    [AttributeUsage(AttributeTargets.Method)]
+    public sealed class MenuItem : Attribute
+    {
+        public MenuItem(string itemName) { }
+    }
+
+    public class EditorWindow : ScriptableObject
+    {
+        public GUIContent titleContent;
+        public void Show() { }
+        public void Repaint() { }
+        public void Close() { }
+        protected static T GetWindow<T>() where T : EditorWindow => CreateInstance<T>();
+        protected static T GetWindow<T>(string title) where T : EditorWindow => CreateInstance<T>();
+    }
+
+    public static class EditorGUILayout
+    {
+        public static void HelpBox(string message, MessageType type) { }
+        public static void LabelField(string label) { }
+        public static void Space() { }
+        public static bool Toggle(string label, bool value) => value;
+        public static Vector2 Vector2Field(string label, Vector2 value) => value;
+        public static Vector3 Vector3Field(string label, Vector3 value) => value;
     }
 
     [Flags]
-    public enum GizmoType { Selected = 1, Active = 2 }
+    public enum GizmoType { Selected = 1, Active = 2, NonSelected = 4 }
 
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class DrawGizmo : Attribute
@@ -625,5 +816,171 @@ namespace UnityEditor
     {
         public static readonly List<(Vector3 Position, string Text)> Labels = new List<(Vector3, string)>();
         public static void Label(Vector3 position, string text) => Labels.Add((position, text));
+    }
+}
+
+namespace UnityEditor
+{
+    // Unity 6.6 sprite-provider migration: minimal GUID mirror. Values only
+    // need identity + uniqueness inside a test run.
+    public struct GUID : IEquatable<GUID>
+    {
+        private static int nextValue = 1;
+        private readonly int value;
+
+        private GUID(int value) { this.value = value; }
+
+        public static GUID Generate() => new GUID(nextValue++);
+
+        public bool Empty() => value == 0;
+
+        public bool Equals(GUID other) => value == other.value;
+
+        public override bool Equals(object obj) => obj is GUID other && Equals(other);
+
+        public override int GetHashCode() => value;
+    }
+}
+
+namespace UnityEditor.U2D.Sprites
+{
+    using UnityEngine;
+
+    // Mirrors the 2D Sprite package surface EFYVPixelArtImporter uses. The stub
+    // provider reads and writes THROUGH TextureImporter.spritesheet so every
+    // existing test that inspects or mutates that field keeps observing exactly
+    // what the importer produced; spriteIDs are emulated per importer+name so
+    // the reuse-by-name contract is exercisable.
+    public class SpriteRect
+    {
+        public string name;
+        public Rect rect;
+        public SpriteAlignment alignment;
+        public Vector2 pivot;
+        public GUID spriteID;
+    }
+
+    public class SpriteNameFileIdPair
+    {
+        public SpriteNameFileIdPair(string name, GUID fileId)
+        {
+            this.name = name;
+            this.fileId = fileId;
+        }
+
+        public string name;
+        public GUID fileId;
+    }
+
+    public interface ISpriteNameFileIdDataProvider
+    {
+        void SetNameFileIdPairs(IEnumerable<SpriteNameFileIdPair> pairs);
+    }
+
+    public interface ISpriteEditorDataProvider
+    {
+        void InitSpriteEditorDataProvider();
+        SpriteRect[] GetSpriteRects();
+        void SetSpriteRects(SpriteRect[] rects);
+        void Apply();
+        T GetDataProvider<T>() where T : class;
+    }
+
+    public class SpriteDataProviderFactories
+    {
+        public void Init() { }
+
+        public ISpriteEditorDataProvider GetSpriteEditorDataProviderFromObject(UnityEngine.Object target)
+        {
+            return new StubTextureImporterSpriteDataProvider((TextureImporter)target);
+        }
+    }
+
+    internal sealed class StubTextureImporterSpriteDataProvider : ISpriteEditorDataProvider
+    {
+        private static readonly Dictionary<TextureImporter, Dictionary<string, GUID>> idsByImporter =
+            new Dictionary<TextureImporter, Dictionary<string, GUID>>();
+
+        private readonly TextureImporter importer;
+        private SpriteRect[] staged;
+
+        internal StubTextureImporterSpriteDataProvider(TextureImporter importer)
+        {
+            this.importer = importer;
+        }
+
+        public void InitSpriteEditorDataProvider() { }
+
+        public SpriteRect[] GetSpriteRects()
+        {
+            SpriteMetaData[] slices = importer.spritesheet;
+            if (slices == null) return new SpriteRect[0];
+            var rects = new SpriteRect[slices.Length];
+            for (int i = 0; i < slices.Length; i++)
+            {
+                rects[i] = new SpriteRect
+                {
+                    name = slices[i].name,
+                    rect = slices[i].rect,
+                    alignment = (SpriteAlignment)slices[i].alignment,
+                    pivot = slices[i].pivot,
+                    spriteID = GetStableId(slices[i].name)
+                };
+            }
+            return rects;
+        }
+
+        public void SetSpriteRects(SpriteRect[] rects)
+        {
+            staged = rects;
+        }
+
+        public void Apply()
+        {
+            if (staged == null) return;
+            var slices = new SpriteMetaData[staged.Length];
+            for (int i = 0; i < staged.Length; i++)
+            {
+                slices[i] = new SpriteMetaData
+                {
+                    name = staged[i].name,
+                    rect = staged[i].rect,
+                    alignment = (int)staged[i].alignment,
+                    pivot = staged[i].pivot
+                };
+                RecordId(staged[i].name, staged[i].spriteID);
+            }
+            importer.spritesheet = slices;
+            staged = null;
+        }
+
+        public T GetDataProvider<T>() where T : class => null;
+
+        private GUID GetStableId(string sliceName)
+        {
+            if (sliceName == null) return default;
+            if (!idsByImporter.TryGetValue(importer, out Dictionary<string, GUID> ids))
+            {
+                ids = new Dictionary<string, GUID>(StringComparer.Ordinal);
+                idsByImporter[importer] = ids;
+            }
+            if (!ids.TryGetValue(sliceName, out GUID id))
+            {
+                id = GUID.Generate();
+                ids[sliceName] = id;
+            }
+            return id;
+        }
+
+        private void RecordId(string sliceName, GUID id)
+        {
+            if (sliceName == null) return;
+            if (!idsByImporter.TryGetValue(importer, out Dictionary<string, GUID> ids))
+            {
+                ids = new Dictionary<string, GUID>(StringComparer.Ordinal);
+                idsByImporter[importer] = ids;
+            }
+            ids[sliceName] = id;
+        }
     }
 }

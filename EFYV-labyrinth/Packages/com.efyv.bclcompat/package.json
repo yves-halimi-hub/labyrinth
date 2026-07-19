@@ -1,0 +1,7 @@
+{
+  "name": "com.efyv.bclcompat",
+  "version": "1.0.0",
+  "displayName": "EFYV BCL Compatibility",
+  "description": "Precompiled .NET base-class-library assemblies that Unity's scripting profile does not ship but EFYVBackend.Core requires: System.Text.Json 8.0.5 and its dependency closure (System.Text.Encodings.Web 8.0.0, System.Runtime.CompilerServices.Unsafe 6.0.0, Microsoft.Bcl.AsyncInterfaces 8.0.0), plus EFYV.ZLibCompat providing System.IO.Compression.ZLibStream (source in ZLibCompatSource~). System.Buffers, System.Memory, and System.Threading.Tasks.Extensions are intentionally absent: Unity already provides those facades.",
+  "unity": "6000.3"
+}

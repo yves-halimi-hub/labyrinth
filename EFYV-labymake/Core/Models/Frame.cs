@@ -9,10 +9,26 @@ namespace EFYVLabyMake.Core.Models
     {
         private EFYVBackend.Core.Models.FrameData Data;
 
-        public int FrameIndex 
-        { 
-            get => Data.FrameIndex; 
-            set => Data.FrameIndex = value; 
+        public int FrameIndex
+        {
+            get => Data.FrameIndex;
+            set => Data.FrameIndex = value;
+        }
+
+        // Item #10: per-frame display duration override in milliseconds.
+        // Config.Animation.InheritFrameDurationMs (0) means "derive this
+        // frame's duration from the owning animation's FPS".
+        public int DurationMs
+        {
+            get => Data.DurationMs;
+            set
+            {
+                if (value != Config.Animation.InheritFrameDurationMs &&
+                    (value < Config.Animation.MinFrameDurationMs ||
+                        value > Config.Animation.MaxFrameDurationMs))
+                    throw new ArgumentOutOfRangeException(nameof(value));
+                Data.DurationMs = value;
+            }
         }
         public int Width { get; private set; }
         public int Height { get; private set; }
@@ -21,6 +37,13 @@ namespace EFYVLabyMake.Core.Models
         // CONTROLLABILITY AUDIT: Replaced single 'CollisionBox' with a generic Dictionary.
         // The artist can now define a "Hurtbox" (where the enemy takes damage) AND an "AttackBox" (e.g. a swinging sword that deals damage) on the exact same frame!
         public Dictionary<string, HitboxData> Hitboxes { get; }
+
+        // Item #6: per-frame sub-element attachments (references to bank
+        // sub-elements placed on the canvas, ordered for layering by ZOrder).
+        // Hosts mutate through the undoable DesignerSession attachment CRUD
+        // or the stamp tool's attachment mode; persisted in .efyvmake and
+        // both flattened into and emitted alongside the .efyvlaby export.
+        public List<SubElementAttachment> Attachments { get; }
 
         public Frame(int index)
             : this(Config.Canvas.DefaultWidth, Config.Canvas.DefaultHeight, index)
@@ -46,6 +69,7 @@ namespace EFYVLabyMake.Core.Models
             {
                 { Config.Hitbox.DefaultKeyHurtbox, new HitboxData() } // Default base hitbox
             };
+            Attachments = new List<SubElementAttachment>();
         }
 
         public PixelColor[] FlattenLayers(int width, int height)
@@ -95,9 +119,12 @@ namespace EFYVLabyMake.Core.Models
         public Frame Clone()
         {
             var clone = new Frame(Width, Height, FrameIndex);
+            clone.DurationMs = DurationMs;
             clone.Layers.Clear();
             foreach (var layer in Layers) clone.Layers.Add(layer.Clone(layer.Name));
             clone.CopyHitboxesFrom(this);
+            foreach (var attachment in Attachments)
+                clone.Attachments.Add(attachment?.Clone());
             return clone;
         }
 

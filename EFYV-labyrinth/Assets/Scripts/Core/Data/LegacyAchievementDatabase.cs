@@ -14,7 +14,12 @@ namespace EFYV.Core.Data
         [SerializeField] private int _id;
         public int id
         {
-            get => Data.Id;
+            // #24: Unity deserialization populates only the serialized fields, and
+            // OnValidate (the editor-only sync) never runs in player builds, so a
+            // freshly loaded definition has Data.Id == 0. Fall back to the
+            // serialized _id in that state; the setter keeps both in lockstep, so
+            // a zero Data.Id with a nonzero _id can only mean "not yet synced".
+            get => Data.Id != 0 ? Data.Id : _id;
             set
             {
                 _id = value;
@@ -60,7 +65,10 @@ namespace EFYV.Core.Data
     {
         public List<LegacyAchievementDefinition> achievements = new List<LegacyAchievementDefinition>();
 
-        private void OnValidate()
+        // #24: reconciles every definition's serialized fields into its packed
+        // Data block. OnValidate covers the editor; AchievementManager.Awake calls
+        // this so player builds get the same sync at startup.
+        public void SyncAllDefinitions()
         {
             for (int i = 0; i < achievements.Count; i++)
             {
@@ -68,6 +76,11 @@ namespace EFYV.Core.Data
                 ach.SyncData();
                 achievements[i] = ach;
             }
+        }
+
+        private void OnValidate()
+        {
+            SyncAllDefinitions();
         }
 
         // Pre-fills the database with 30 basic achievements as a basis

@@ -99,6 +99,114 @@ namespace EFYVBackend.Core.Math
             }
         }
 
+        // SHAPE TOOLS: axis-aligned rectangle spanned by two anchor corners.
+        // `filled` paints the whole box; otherwise a border band `thickness`
+        // pixels wide is painted along the inside of the box (a band wider than
+        // the box degrades to a solid fill). Off-canvas anchors are legal: only
+        // the intersection with the canvas is visited, so far coordinates cost
+        // at most one canvas sweep.
+        public static unsafe void DrawRectangle(uint* canvas, int width, int height, int x0, int y0, int x1, int y1, uint colorVal, int thickness, bool filled)
+        {
+            if (canvas == null) throw new System.ArgumentNullException(nameof(canvas));
+            if (width <= 0) throw new System.ArgumentOutOfRangeException(nameof(width));
+            if (height <= 0) throw new System.ArgumentOutOfRangeException(nameof(height));
+            if (thickness <= 0) throw new System.ArgumentOutOfRangeException(nameof(thickness));
+
+            long minX = FastMath.FastMin(x0, x1);
+            long maxX = FastMath.FastMax(x0, x1);
+            long minY = FastMath.FastMin(y0, y1);
+            long maxY = FastMath.FastMax(y0, y1);
+
+            int clipMinX = (int)(minX > 0 ? minX : 0);
+            int clipMaxX = (int)(maxX < width - 1 ? maxX : width - 1);
+            int clipMinY = (int)(minY > 0 ? minY : 0);
+            int clipMaxY = (int)(maxY < height - 1 ? maxY : height - 1);
+
+            long innerMinX = minX + thickness;
+            long innerMaxX = maxX - thickness;
+            long innerMinY = minY + thickness;
+            long innerMaxY = maxY - thickness;
+
+            for (int py = clipMinY; py <= clipMaxY; py++)
+            {
+                uint* row = canvas + ((long)py * width);
+                for (int px = clipMinX; px <= clipMaxX; px++)
+                {
+                    if (!filled &&
+                        px >= innerMinX && px <= innerMaxX &&
+                        py >= innerMinY && py <= innerMaxY)
+                        continue;
+                    *(row + px) = colorVal;
+                }
+            }
+        }
+
+        // SHAPE TOOLS: axis-aligned ellipse inscribed in the anchor bounding box.
+        // Pixel (px, py) is inside when ((px-cx)/rx)^2 + ((py-cy)/ry)^2 <= 1 in
+        // double math over the box center/half-extents. An outline is the
+        // morphological ring: an inside pixel is kept when the square of radius
+        // `thickness` around it is NOT fully inside the ellipse. Because the
+        // ellipse is convex, that square lies inside exactly when its four
+        // corners do, so the ring test is four extra inclusion checks - and any
+        // inside pixel with an outside 4-neighbor is always kept (a corner
+        // beyond that neighbor would prove the neighbor inside by convexity),
+        // so the ring can never develop gaps, even for extremely eccentric
+        // ellipses where shrinking both radii by `thickness` would overshoot
+        // the true band near the flat sides. A ring thicker than a radius
+        // degrades to the solid fill. A zero-width/height box degrades to its
+        // (filled) bounding-box line.
+        public static unsafe void DrawEllipse(uint* canvas, int width, int height, int x0, int y0, int x1, int y1, uint colorVal, int thickness, bool filled)
+        {
+            if (canvas == null) throw new System.ArgumentNullException(nameof(canvas));
+            if (width <= 0) throw new System.ArgumentOutOfRangeException(nameof(width));
+            if (height <= 0) throw new System.ArgumentOutOfRangeException(nameof(height));
+            if (thickness <= 0) throw new System.ArgumentOutOfRangeException(nameof(thickness));
+
+            long minX = FastMath.FastMin(x0, x1);
+            long maxX = FastMath.FastMax(x0, x1);
+            long minY = FastMath.FastMin(y0, y1);
+            long maxY = FastMath.FastMax(y0, y1);
+
+            double radiusX = (maxX - minX) / 2.0;
+            double radiusY = (maxY - minY) / 2.0;
+            if (radiusX == 0.0 || radiusY == 0.0)
+            {
+                DrawRectangle(canvas, width, height, x0, y0, x1, y1, colorVal, thickness, true);
+                return;
+            }
+
+            double centerX = (minX + maxX) / 2.0;
+            double centerY = (minY + maxY) / 2.0;
+
+            int clipMinX = (int)(minX > 0 ? minX : 0);
+            int clipMaxX = (int)(maxX < width - 1 ? maxX : width - 1);
+            int clipMinY = (int)(minY > 0 ? minY : 0);
+            int clipMaxY = (int)(maxY < height - 1 ? maxY : height - 1);
+
+            for (int py = clipMinY; py <= clipMaxY; py++)
+            {
+                uint* row = canvas + ((long)py * width);
+                for (int px = clipMinX; px <= clipMaxX; px++)
+                {
+                    if (!IsInsideEllipse(px, py, centerX, centerY, radiusX, radiusY)) continue;
+                    if (!filled &&
+                        IsInsideEllipse(px - thickness, py - thickness, centerX, centerY, radiusX, radiusY) &&
+                        IsInsideEllipse(px + thickness, py - thickness, centerX, centerY, radiusX, radiusY) &&
+                        IsInsideEllipse(px - thickness, py + thickness, centerX, centerY, radiusX, radiusY) &&
+                        IsInsideEllipse(px + thickness, py + thickness, centerX, centerY, radiusX, radiusY))
+                        continue;
+                    *(row + px) = colorVal;
+                }
+            }
+        }
+
+        private static bool IsInsideEllipse(double px, double py, double centerX, double centerY, double radiusX, double radiusY)
+        {
+            double normalizedX = (px - centerX) / radiusX;
+            double normalizedY = (py - centerY) / radiusY;
+            return normalizedX * normalizedX + normalizedY * normalizedY <= 1.0;
+        }
+
         // PERFORMANCE: O(H) Scanline Flood Fill Algorithm
         // Reduces Space Complexity (Stack Memory) from O(W*H) down to O(H).
         // Instead of recursively expanding in 4 directions, this blasts through horizontal lines instantly

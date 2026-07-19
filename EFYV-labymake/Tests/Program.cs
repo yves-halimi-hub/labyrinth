@@ -54,6 +54,164 @@ internal static partial class Program
         await RunAsync(TestLiveDebugAdversarialStateMachine);
         await RunAsync(TestAutosaveAdversarialStateMachine);
         await RunAsync(TestDesignerSessionSaveReloadLifecycle);
+        // ToolsDeepTests.cs
+        Run(TestToolsPencilThickLineReferenceModel);
+        Run(TestToolsFillFloodReferenceModel);
+        Run(TestToolsStampBlitReferenceModel);
+        Run(TestToolsHitboxGestureStateMachine);
+        Run(TestToolsTileMakerWrapModelAndGuards);
+        Run(TestToolsMovingToolDefaultsAndGeneratorEquivalence);
+        Run(TestToolsMapToolRngReferenceAndSequencing);
+        // SessionLogicDeepTests.cs
+        Run(TestSessionLogicSessionConstructionAndSelection);
+        Run(TestSessionLogicSessionNoOpAndIndexTracking);
+        Run(TestSessionLogicHitboxGestureAndGenerateReplace);
+        Run(TestSessionLogicGestureRandomizedDiffModel);
+        Run(TestSessionLogicCommandInternalsAndStructuralEdges);
+        Run(TestSessionLogicCommandManagerThrowingCommands);
+        Run(TestSessionLogicValidatorBoundariesAndHitboxModel);
+        Run(TestSessionLogicSchemaChainsAndValueKinds);
+        Run(TestSessionLogicAssetBankBytesAndCorpus);
+        // LiveLogicDeepTests.cs
+        Run(TestLiveLogicPreviewCumulativeReferenceModel);
+        Run(TestLiveLogicPreviewResidualAndEmptyStateMachine);
+        Run(TestLiveLogicViewportRenderReferenceModel);
+        Run(TestLiveLogicViewportTransformContracts);
+        Run(TestLiveLogicToolbarCategoryOrderAndNormalization);
+        Run(TestLiveLogicWalkAnimationReferenceModel);
+        Run(TestLiveLogicJitterAnimationReferenceModel);
+        await RunAsync(TestLiveLogicTaskDebounceSchedulerContract);
+        await RunAsync(TestLiveLogicLiveDebugEventContextPath);
+        await RunAsync(TestLiveLogicLiveDebugTimeAndFailurePaths);
+        // batch4/item-27: live loop scope accumulation + metadata-only fast path
+        await RunAsync(TestLiveLogicScopeMetadataOnlyFastPath);
+        // ModelsPersistenceDeepTests.cs
+        Run(TestModelsPersistenceModelContractsAndLayerReference);
+        Run(TestModelsPersistenceSnapshotCompositionAndPropertyCapture);
+        Run(TestModelsPersistenceDocumentBytesAndPropertyRoundTrip);
+        Run(TestModelsPersistenceSaveGuardsAndFailureAtomicity);
+        Run(TestModelsPersistenceExportAtlasMetadataAndPublication);
+        await RunAsync(TestModelsPersistenceAutosaveContextDispatch);
+        // b1-backend-png agent additions (StorageAndExportTests.cs)
+        Run(TestExportGridAtlasLayoutRoundTrip);
+        // batch1/labymake-session: session history robustness (#20) + structural preview scope (#30)
+        Run(TestSessionLogicUndoRedoSelectionClampPolicy);
+        Run(TestSessionLogicGestureRollbackContract);
+        Run(TestValidatorStructuralScope);
+        Run(TestSessionPreviewStructuralValidationScope);
+        // batch4/item-27: validation deferred off the per-command hot path but
+        // current on demand (SessionMapPreviewTests.cs).
+        Run(TestSessionValidationDeferredComputeOnDemand);
+        // b2-pipeline-contract agent (StorageAndExportTests.cs): .efyvlaby
+        // contract (#16), snapshot atlas caps + identity reject (#16b/#36),
+        // and the bounded publish retry (#12)
+        Run(TestExportDocumentVersionAndBaseAssetType);
+        Run(TestExportSnapshotCapsAndIdentityReject);
+        Run(TestExportPublishRetryRollback);
+        // batch4/item-27 (live fast path): per-artifact content-hash suppression
+        // and the metadata-only publish path (StorageAndExportTests.cs).
+        Run(TestExportContentHashSuppression);
+        Run(TestExportMetadataOnlyFastPath);
+        // batch3/pixel-tools agent (PixelToolsSelectionResizeTests.cs): item #9
+        // eraser, symmetry, shape tools, selection/floating buffer, ResizeCanvas
+        Run(TestPixelToolsEraserTrueTransparency);
+        Run(TestPixelToolsSymmetryMirrorModes);
+        Run(TestPixelToolsShapeGesturePreviewAndCommit);
+        Run(TestPixelToolsSelectionRegionGeometry);
+        Run(TestPixelToolsSelectionLiftMoveAnchorHistory);
+        Run(TestPixelToolsClipboardAndTransientDrops);
+        Run(TestPixelToolsResizeCanvasAnchorModel);
+        Run(TestPixelToolsResizeCanvasGuardsAndHistory);
+        // batch3/palette agent (PaletteColorWorkflowTests.cs): item #8 palette
+        // model + recent ring, .efyvmake palette section, session palette CRUD,
+        // composited eyedropper, global color swap, palette-constraint snap
+        Run(TestPaletteModelRecentRingAndNearestMetric);
+        Run(TestPalettePersistenceRoundTripAndLegacyDocuments);
+        Run(TestSessionPaletteCrudUndoRedoAndRecents);
+        Run(TestEyedropperCompositedPickContract);
+        Run(TestColorSwapScopesSparseDiffsAndFuzz);
+        Run(TestPaletteConstraintSnapOnDrawTools);
+        // batch3.3 agent (AnimationWorkflowTests.cs): item #10 - per-frame
+        // durations + loop/ping-pong tags (model/persistence/preview/export),
+        // cross-frame layer batches, onion skinning, layer-preserving
+        // generators + bob/breathe and shake/hit-flash presets
+        Run(TestAnimationTimingModelAndPersistence);
+        Run(TestPreviewDurationsLoopRangeAndPingPong);
+        Run(TestSessionFrameDurationAndPlaybackTagCommands);
+        Run(TestSessionBatchLayerOpsAcrossFrames);
+        Run(TestGeneratorPresetsAndLayerPreservingMerge);
+        Run(TestExportAtlasTimingMetadataFlow);
+        Run(TestViewportOnionSkinComposite);
+        // batch3.4 agent (EffectsAuthoringFilterTests.cs): item #7 - the
+        // immutable EffectDescriptor model, undoable session effect CRUD,
+        // .efyvmake effects section + malformed corpus, .efyvlaby export flow,
+        // and the destructive layer filters (blur/outline/glow/color-shift)
+        // through the sparse FrameEditCommand path with selection masking.
+        Run(TestEffectDescriptorModelAndCloneSharing);
+        Run(TestSessionEffectCrudUndoRedo);
+        Run(TestEffectsPersistenceRoundTripAndLegacy);
+        Run(TestEffectsExportAtlasFlow);
+        Run(TestSessionLayerFiltersSparseUndo);
+        Run(TestSessionFilterSelectionMaskAndCatalog);
+        // batch3.5 agent (SubElementPipelineTests.cs): item #6 - SubElement
+        // pivot/default transform + .efyvsub v2 (with v1 legacy reads),
+        // per-frame attachments (model/session CRUD/stamp gestures),
+        // .efyvmake persistence, and the flatten+metadata export flow.
+        Run(TestSubElementPivotTransformAndAttachmentModel);
+        Run(TestSubElementBankV2RoundTripAndLegacy);
+        Run(TestSessionAttachmentCrudUndoRedo);
+        Run(TestStampToolAttachmentGesturesAndBake);
+        Run(TestAttachmentPersistenceRoundTripAndResize);
+        Run(TestExportAttachmentFlattenAndMetadata);
+        // batch3.6 agent (MapTilesetPipelineTests.cs): item #5 - tileset and
+        // map sections (models + MapRenderer), undoable session tileset CRUD
+        // and map editing (cells/bulk/paint strokes/MapTool gestures),
+        // .efyvmake sections + malformed corpus, tile-sheet .efyvlaby export
+        // with the tile-ID manifest, and .efyvmap publication round trips.
+        Run(TestMapTilesetModelsAndRenderer);
+        Run(TestSessionTilesetCrudUndoRedo);
+        Run(TestSessionMapEditingUndoRedo);
+        Run(TestSessionMapToolGestureHistory);
+        Run(TestMapTilesetPersistenceRoundTrip);
+        Run(TestTilesetExportEndToEnd);
+        Run(TestMapExportEndToEnd);
+        // batch3.7 agent (ViewportOverlayZoomTests.cs): item #31 - the public
+        // SetZoom/SetPan/ResetView viewport API (batch-2 carried gap) and the
+        // designer overlay passes (core checkerboard backdrop, pixel/tile
+        // grid boundary lines, per-key hitbox rectangles, attachment
+        // outlines pinned to the export flatten bounds, pivot markers) with
+        // pixel-exact reference models and a zero-alloc steady-state guard.
+        Run(TestViewportZoomPanResetApiContract);
+        Run(TestOverlayCheckerboardCoreComposite);
+        Run(TestOverlayGridBoundaryReference);
+        Run(TestOverlayHitboxRectsAndKeyColors);
+        Run(TestOverlayAttachmentOutlinesAndPivotMarkers);
+        Run(TestOverlayComposeStateAndSteadyState);
+        // batch3.8 agent (DirectionalAuthoringTests.cs): item #33 - linked
+        // 4-direction authoring (DirectionalState model + project routing,
+        // linked project creation, undoable enable/switch/mirror session
+        // commands, export-scope all-facings validation, the .efyvmake
+        // directional section + malformed corpus, one-export-all-facings +
+        // live debug) and runtime-extensible asset fields (custom-field
+        // registration matrix + the .efyvlaby export flow).
+        Run(TestDirectionalStateModelAndFacingRouting);
+        Run(TestToolbarLinkedDirectionalCreation);
+        Run(TestSessionDirectionalEnableAndFacingSwitch);
+        Run(TestSessionMirrorGeneratedFacing);
+        Run(TestDirectionalValidationExportScope);
+        Run(TestDirectionalPersistenceRoundTripAndCorpus);
+        Run(TestDirectionalExportAllFacings);
+        await RunAsync(TestDirectionalLiveDebugPublishesAllFacings);
+        Run(TestSchemaCustomFieldRegistrationMatrix);
+        Run(TestCustomFieldsExportFlow);
+        // item #3 (editor panels): App view-state helpers + ListProjects
+        // (EditorAppStateTests.cs).
+        Run(TestAppStateScreenPixelConverterAndBlit);
+        Run(TestAppStatePropertyFieldEditor);
+        Run(TestAppStateProblemFormatter);
+        Run(TestAppStateLiveDebugFormatter);
+        Run(TestAppStatePreviewStatusFormatter);
+        Run(TestPersistenceListProjectsAndAdversarialDirs);
         Console.WriteLine($"LabyMake verification passed: {assertions:N0} assertions in {passed} groups.");
     }
 
@@ -128,12 +286,28 @@ internal static partial class Program
 
     private static void TestAtlasLimitValidation()
     {
+        // b2-pipeline-contract agent: the atlas budget now follows the batch-1
+        // near-square grid layout. 257 default-canvas frames used to overflow
+        // the retired single-row model but fit comfortably as a 17x16 grid.
         int frameCount = (Config.Export.MaxAtlasDimension / Config.Canvas.DefaultWidth) +
             Config.Common.UnitCount;
         EFYVProject project = CreateValidProject(Path.GetTempPath(), frameCount);
-        ProjectValidationResult validation = new ProjectValidator(new AssetSchemaService())
-            .Validate(project);
-        Require(ContainsIssue(validation, ProjectIssueCode.AtlasLimitExceeded));
+        var validator = new ProjectValidator(new AssetSchemaService());
+        Require(!ContainsIssue(validator.Validate(project), ProjectIssueCode.AtlasLimitExceeded));
+
+        // A 4096x1 canvas: 16 frames form a 4x4 grid at exactly the 16384px
+        // width cap (legal); the 17th frame forces a 5th column (illegal).
+        EFYVProject grid = CreateValidProject(Path.GetTempPath(), 1);
+        grid.CanvasWidth = Config.Persistence.MaxCanvasDimension;
+        grid.CanvasHeight = 1;
+        grid.Animations.Clear();
+        var animation = new AnimationState("GridBudget", Config.Animation.DefaultFPS);
+        var wideFrame = new Frame(grid.CanvasWidth, grid.CanvasHeight);
+        for (int index = 0; index < 16; index++) animation.Frames.Add(wideFrame);
+        grid.Animations.Add(animation);
+        Require(!ContainsIssue(validator.Validate(grid), ProjectIssueCode.AtlasLimitExceeded));
+        animation.Frames.Add(wideFrame);
+        Require(ContainsIssue(validator.Validate(grid), ProjectIssueCode.AtlasLimitExceeded));
     }
 
     private static void TestHitboxAndGeneratedAnimation()

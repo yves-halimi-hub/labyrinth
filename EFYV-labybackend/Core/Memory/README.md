@@ -10,7 +10,18 @@ Low-allocation operations over unmanaged arrays and packed RGBA buffers.
   blending, layer flattening, unchecked 2D access, nearest-neighbor scaling, and
   clipped stamp blitting.
 - [FastEffects.cs](FastEffects.cs) implements separable box blur with either an
-  `ArrayPool<uint>` scratch buffer or a caller-provided scratch pointer.
+  `ArrayPool<uint>` scratch buffer or a caller-provided scratch pointer. Color
+  channels accumulate alpha-premultiplied and are un-premultiplied once when
+  packing the destination, so fully transparent neighbors contribute no color
+  and sprite edges fade in alpha without darkening toward halo colors; a
+  zero-alpha average packs as exactly zero. It also carries the item #7 filter
+  primitives: `Outline` (1px 8-neighborhood expansion of the alpha>0
+  silhouette in a chosen color; silhouette pixels are never recolored),
+  `Glow` (silhouette+rim flooded with the glow color, box-blurred by radius —
+  0 keeps a hard rim — then the source alpha-composited back on top), and
+  `ColorShift` (per-pixel HSV: hue delta wraps degrees, saturation/value
+  deltas clamp to [0,1]; alpha preserved, fully transparent pixels copied
+  bit-exact). All three tolerate `src == dest`.
 
 ## Safety and representation
 
