@@ -1,0 +1,10 @@
+efyv 2
+
+const LabyMakeUse = permission("labymake:use")
+
+access LabyMakeAccess {
+  permissions = [LabyMakeUse]
+  grants = {
+    "labymake:use": ["editor"],
+  }
+}

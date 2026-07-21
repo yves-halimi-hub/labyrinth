@@ -1,6 +1,6 @@
 # Mock Pixel Art Exporter
 
-[Up to game repository](../README.md) | [LabyMake](../../EFYV-labymake/README.md)
+[Up to game repository](../README.md) | [LabyMake node](../../EFYV-labymake/README.md)
 
 [`MockExporter.py`](MockExporter.py) produces a solid RGBA PNG and matching `.efyvlaby` document for exercising the Unity import contract without the full designer application.
 

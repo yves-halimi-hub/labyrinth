@@ -1,0 +1,11 @@
+efyv 2
+
+service labymake-engine {
+  "build from" = "services/labymake-engine"
+  speaks = "grpc on port 50051"
+  private = true
+  can = {
+    validate: {rpc: "efyv.labymake.v1.LabyMakeEngine/Validate", permission: "labymake:use", deadline: "10 seconds"},
+    export: {rpc: "efyv.labymake.v1.LabyMakeEngine/Export", permission: "labymake:use", deadline: "120 seconds"},
+  }
+}

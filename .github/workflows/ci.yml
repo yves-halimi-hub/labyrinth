@@ -6,7 +6,7 @@ on:
 
 jobs:
   verify:
-    name: Run all four verification suites
+    name: Verify game and LabyMake engine
     # windows-latest is required: SafePathPolicy.IsSafeFileStem delegates to
     # Path.GetInvalidFileNameChars(), and the backend suite
     # (ExportIoDeepTests.TestExportIoSafePathPolicyModel) asserts Windows-only
@@ -20,8 +20,8 @@ jobs:
       - name: Setup .NET SDKs
         uses: actions/setup-dotnet@v4
         with:
-          # The backend and designer verification projects target net8.0;
-          # the game verification project targets net10.0.
+          # The backend and LabyMake engine target net8.0; the game verification
+          # project targets net10.0.
           dotnet-version: |
             8.0.x
             10.0.x
@@ -34,14 +34,8 @@ jobs:
       - name: Backend verification (net8.0)
         run: dotnet run --project EFYV-labybackend/Tests/EFYVBackend.Verification.csproj -c Release
 
-      - name: Designer verification (net8.0)
-        run: dotnet run --project EFYV-labymake/Tests/EFYVLabyMake.Verification.csproj -c Release
-
-      # Build-only (no display needed): keeps the Avalonia editor shell from
-      # drifting against the source-linked designer/backend cores. Needs NuGet
-      # access for the three Avalonia packages.
-      - name: Editor shell build (net8.0)
-        run: dotnet build EFYV-labymake/App/EFYVLabyMake.App.csproj -c Release
+      - name: LabyMake gRPC engine build (net8.0)
+        run: dotnet build EFYV-labymake/services/labymake-engine/LabyMakeEngine.csproj -c Release
 
       - name: Game and editor verification (net10.0)
         run: dotnet run --project EFYV-labyrinth/Tests/EFYVGame.Verification.csproj -c Release

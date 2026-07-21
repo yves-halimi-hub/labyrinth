@@ -37,3 +37,6 @@ Thumbs.db
 *.tmp
 *.staging
 *.efyvmake.autosave
+
+# LabyMake compiler/task evidence is reproducible from app/**/*.efyv.
+EFYV-labymake/.efyv/

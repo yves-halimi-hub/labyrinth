@@ -1,0 +1,18 @@
+efyv 2
+
+from efyv.target import Web
+from config.access import LabyMakeAccess
+from integrations.labymake_engine import labymake-engine as LabyMakeEngine
+from maker.studio import LabyMakeStudio
+from pages.studio import Studio
+
+app LabyMake {
+  name = "efyv-labymake"
+  title = "EFYV LabyMake"
+  language = "english"
+  brand = {label: "LabyMake", subtitle: "Labyrinth asset maker", icon: "grid-3x3", gradient: ["#22c55e", "#0f766e"]}
+  targets = [Web]
+  pages = [Studio]
+  access = LabyMakeAccess
+  integrations = [LabyMakeEngine]
+}

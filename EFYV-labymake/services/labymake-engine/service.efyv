@@ -1,0 +1,9 @@
+schema_version: 1
+name: labymake-engine
+protocol: grpc
+port: 50051
+build: build.sh
+health_service: grpc.health.v1.Health
+exports:
+  - efyv.labymake.v1.LabyMakeEngine/Validate
+  - efyv.labymake.v1.LabyMakeEngine/Export

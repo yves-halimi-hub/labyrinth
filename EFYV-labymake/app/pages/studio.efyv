@@ -1,0 +1,9 @@
+efyv 2
+
+from maker.studio import LabyMakeStudio
+
+page Studio {
+  key = "studio"
+  title = "Labyrinth asset studio"
+  content = LabyMakeStudio
+}

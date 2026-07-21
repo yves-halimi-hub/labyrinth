@@ -1204,8 +1204,8 @@ namespace EFYVBackend.Core.Data
             {
                 // Checkerboard transparency background (screen-anchored cells
                 // of edge 1 << CellShift, composited UNDER the canvas content
-                // inside the canvas area only). Moved into core from the
-                // Avalonia shell so every UI host renders the same backdrop.
+                // inside the canvas area only). Kept in core so every platform
+                // renderer uses the same backdrop.
                 public const uint CheckerLightRgba = 0xFF808080u;
                 public const uint CheckerDarkRgba = 0xFF5A5A5Au;
                 public const int DefaultCheckerCellShift = 3;

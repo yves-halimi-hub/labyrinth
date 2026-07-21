@@ -1,6 +1,6 @@
 # EFYV Labyrinth
 
-[EFYV workspace](../README.md) | [Backend](../EFYV-labybackend/README.md) | [Designer](../EFYV-labymake/README.md)
+[EFYV workspace](../README.md) | [Backend](../EFYV-labybackend/README.md) | [LabyMake node](../EFYV-labymake/README.md)
 
 Unity-facing runtime and editor integration for EFYV Labyrinth. This repository consumes the shared backend primitives, imports assets produced by LabyMake, and contains the gameplay bridge code that runs inside Unity.
 
@@ -32,10 +32,10 @@ Layout notes:
 
 ## Data Flow
 
-1. LabyMake publishes a PNG and versioned `.efyvlaby` metadata file.
+1. The declaration-driven LabyMake node exports a PNG and versioned `.efyvlaby` metadata file through an explicit browser download or folder handoff.
 2. `EFYVPixelArtImporter` configures the texture and creates or refreshes a schema-backed `ScriptableObject`.
 3. Runtime entities load the compact schema block and retain Unity-only sprite, atlas, and hitbox references.
-4. During Play Mode, the live-debug bridge refreshes scene objects that use the changed asset.
+4. During Play Mode, the game-owned refresh bridge can reload files after the user explicitly hands them to the Unity project; the Maker node never writes a host path in the background.
 
 ## Runtime Rules
 

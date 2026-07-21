@@ -7,8 +7,9 @@
 [`ci.yml`](ci.yml) runs on every push and pull request:
 
 1. Check out the monorepo.
-2. Install the .NET 8 and .NET 10 SDKs (the backend and designer verification projects target `net8.0`; the game verification project targets `net10.0`) plus Python 3.
-3. Run all four verification suites in order: `EFYV-labybackend/Tests/EFYVBackend.Verification.csproj`, `EFYV-labymake/Tests/EFYVLabyMake.Verification.csproj`, and `EFYV-labyrinth/Tests/EFYVGame.Verification.csproj` (each with `-c Release`), then `python -m unittest discover -s EFYV-labyrinth/Tests -p "test_*.py"`.
+2. Install the .NET 8 and .NET 10 SDKs (the backend and LabyMake engine target `net8.0`; the game verification project targets `net10.0`) plus Python 3.
+3. Run the backend verification project, build the stateless `EFYV-labymake/services/labymake-engine` gRPC service,
+   run the game/editor verification project, and execute the game Python contract tests.
 
 The job runs on `windows-latest` by necessity, not preference: `SafePathPolicy.IsSafeFileStem` delegates to `Path.GetInvalidFileNameChars()`, and the backend suite asserts Windows-only rejections (`a|b`, tab, backslash) that Linux treats as valid file-name characters.
 

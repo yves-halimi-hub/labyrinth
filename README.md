@@ -2,31 +2,37 @@
 
 [EFYV Games](../../README.md) / [Game repositories](../README.md) / Labyrinth
 
-This monorepo contains the three components that build the Labyrinth game, designer, and shared runtime foundation. Their existing directory names are preserved so source links and project references remain stable.
+This repository contains the Labyrinth game, its shared runtime foundation, and the declaration-driven
+LabyMake EFYV node.
 
 ## Choose Where To Start
 
 | I want to understand or change... | Start here |
 | --- | --- |
 | Shared schemas, memory, math, collections, export, or save primitives | [EFYV LabyBackend](EFYV-labybackend/README.md) |
-| The asset designer, drawing tools, history, validation, persistence, export, autosave, or live debug | [EFYV LabyMake](EFYV-labymake/README.md) |
-| The desktop editor app (run it: `dotnet run --project EFYV-labymake\App\EFYVLabyMake.App.csproj -c Release`) | [EFYV LabyMake App](EFYV-labymake/App/README.md) |
+| The asset designer, drawing tools, history, persistence, jobs, or browser handoff | [LabyMake node](EFYV-labymake/README.md) |
+| LabyMake validation and deterministic Unity artifact export | [`labymake-engine`](EFYV-labymake/services/labymake-engine/) |
 | Unity gameplay, entities, managers, weapons, pooling, import, or editor integration | [EFYV Labyrinth](EFYV-labyrinth/README.md) |
-| Cross-component verification | [Backend tests](EFYV-labybackend/Tests/README.md), [designer tests](EFYV-labymake/Tests/README.md), and [game/editor tests](EFYV-labyrinth/Tests/README.md) |
+| Existing game verification | [Backend tests](EFYV-labybackend/Tests/README.md) and [game/editor tests](EFYV-labyrinth/Tests/README.md) |
 
 ## System Shape
 
 ```text
-EFYV-labymake  -- PNG + .efyvlaby -->  EFYV-labyrinth
-       \                                  /
-        +---- EFYV-labybackend contracts -+
+EFYV-labymake/app/app.efyv --> EFYV Platform --> labymake-engine --> PNG + .efyvlaby + ZIP
+                                                        |
+                                                        v
+                                                EFYV-labyrinth
 ```
 
 - **LabyBackend** is the dependency foundation. It owns compact data layouts, deterministic algorithms, bounded collections, file safety, binary persistence, and export primitives.
-- **LabyMake** is the headless designer core. It owns editable project state, tools, undo/redo, validation, preview, persistence, publishing, autosave, and live-debug transport.
+- **LabyMake** is an ordinary EFYV Maker node. EFYV Platform owns editable state, tools, history,
+  persistence, jobs, artifacts, and browser-folder handoff; `labymake-engine` owns only bounded,
+  stateless domain validation and deterministic export.
 - **Labyrinth** is the Unity bridge and game runtime. It imports designer output, creates schema-backed assets, and runs gameplay through pooled entities and centralized update loops.
 
-Dependency flow should remain one-way: the designer and game may consume backend contracts; the backend must not depend on either consumer. The designer communicates with the game only through published artifacts: live debug drops the PNG and `.efyvlaby` files into the game's `Assets/RawArt` directory, where Unity's asset import runs `EFYVPixelArtImporter` and the Play Mode bridge refreshes affected scene objects. There is no runtime type coupling or notification channel.
+The Maker communicates with the game only through explicit user-downloaded or browser-folder artifacts.
+There is no desktop bridge, guessed host path, live filesystem watcher contract, or runtime type
+coupling between the EFYV node and the game.
 
 ## Documentation Navigation
 
@@ -39,11 +45,12 @@ Every component uses the same documentation pattern:
 
 ## Verify Everything
 
-The backend and designer suites target `net8.0`; the game suite targets `net10.0`, so full verification needs both the .NET 8 and .NET 10 SDKs. Run from this repository root:
+The backend suite targets `net8.0`; the game suite targets `net10.0`. The new `labymake-engine`
+targets `net8.0`. Full verification needs both SDKs. Run from this repository root:
 
 ```powershell
 dotnet run --project EFYV-labybackend\Tests\EFYVBackend.Verification.csproj -c Release
-dotnet run --project EFYV-labymake\Tests\EFYVLabyMake.Verification.csproj -c Release
+dotnet build EFYV-labymake\services\labymake-engine\LabyMakeEngine.csproj -c Release
 dotnet run --project EFYV-labyrinth\Tests\EFYVGame.Verification.csproj -c Release
 ```
 
@@ -53,7 +60,8 @@ The game component also has Python contract tests:
 python -m unittest discover -s EFYV-labyrinth\Tests -p "test_*.py" -v
 ```
 
-The desktop editor app builds warning-free with `dotnet build EFYV-labymake\App\EFYVLabyMake.App.csproj -c Release`, and the Unity project at `EFYV-labyrinth` opens in Unity `6000.6.0b4` (pinned in `ProjectSettings/ProjectVersion.txt`).
+The retired Avalonia/session designer was deleted. The Unity project at `EFYV-labyrinth` opens in
+Unity `6000.6.0b4` (pinned in `ProjectSettings/ProjectVersion.txt`).
 
 ## Repository Automation
 

@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package efyv.labymake.v1;
+
+service LabyMakeEngine {
+  rpc Validate(SnapshotRequest) returns (ValidationReply);
+  rpc Export(SnapshotRequest) returns (ExportReply);
+}
+
+message SnapshotRequest {
+  bytes snapshot_json = 1;
+}
+
+message Diagnostic {
+  string code = 1;
+  string message = 2;
+  string subject = 3;
+}
+
+message ValidationReply {
+  bool valid = 1;
+  repeated Diagnostic diagnostics = 2;
+}
+
+message ExportReply {
+  string filename = 1;
+  string content_type = 2;
+  bytes bundle = 3;
+  repeated Diagnostic diagnostics = 4;
+}

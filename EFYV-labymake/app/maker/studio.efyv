@@ -1,0 +1,40 @@
+efyv 2
+
+import efyv.maker as Maker
+
+component LabyMakeStudio extends Maker.Studio {
+  title = "EFYV LabyMake"
+  document = Maker.Document(
+    kind = "efyv-labymake-project",
+    autosave = true,
+    versioning = true,
+    initial = {
+      name: "labymake-project",
+      canvasWidth: 1,
+      canvasHeight: 1,
+      targetAssetType: "EFYVSprite",
+      assetProperties: {entityName: "labymake-project"},
+      animations: [{stateName: "Idle", fps: 12, frames: [{durationMs: 83, layers: [{isVisible: true, opacity: 1, rgbaBytes: "AAAAAA=="}]}]}],
+    },
+  )
+  workspace = Maker.CanvasWorkspace(selection = "pixel-layer-frame")
+  panels = [Maker.HistoryPanel(), Maker.JobPanel(), Maker.ArtifactPanel(destination = Maker.BrowserFolderDestination(fallback = "zip")), Maker.CodePanel(language = "json", read_only = true)]
+  tools = [
+    Maker.Tool(id = "select", label = "Select"),
+    Maker.Tool(id = "pencil", label = "Pencil", options = {size: 1}),
+    Maker.Tool(id = "eraser", label = "Eraser", options = {size: 1}),
+    Maker.Tool(id = "fill", label = "Fill"),
+    Maker.Tool(id = "eyedropper", label = "Eyedropper"),
+    Maker.Tool(id = "shape", label = "Shape"),
+  ]
+  commands = [
+    Maker.Command(id = "validate", label = "Validate asset", operation = "labymake-engine.validate", input = {snapshotJson: {from: "$document", encoding: "base64-json"}}),
+    Maker.Command(id = "export", label = "Export for Unity", operation = "labymake-engine.export", input = {snapshotJson: {from: "$document", encoding: "base64-json"}}, result = "application/zip"),
+  ]
+  artifacts = [
+    {kind: "image/png", extension: ".png"},
+    {kind: "application/x-efyvlaby", extension: ".efyvlaby"},
+    {kind: "application/zip", extension: ".zip"},
+  ]
+  browser_handoff = true
+}

@@ -1,6 +1,6 @@
 # EFYV Laby Backend
 
-[Workspace documentation](../README.md) | [LabyMake editor](../EFYV-labymake/) | [Labyrinth game](../EFYV-labyrinth/)
+[Workspace documentation](../README.md) | [LabyMake node](../EFYV-labymake/README.md) | [LabyMake engine](../EFYV-labymake/services/labymake-engine/) | [Labyrinth game](../EFYV-labyrinth/)
 
 EFYV Laby Backend is the engine-independent C# core shared by the EFYV Labyrinth
 toolchain. It defines the data contract used by the LabyMake authoring application
@@ -21,8 +21,9 @@ namespaces, unsafe-code setting, schema offsets, and serialized field names.
   third-party packages.
 - Unsafe code is required for fixed schema blocks, raw buffers, pixel operations,
   PNG encoding, and binary saves.
-- [EFYV-labymake](../EFYV-labymake/) consumes the shared schemas, models, drawing,
-  persistence, and export contracts.
+- The declaration-driven [LabyMake node](../EFYV-labymake/README.md) and its narrow
+  [domain engine](../EFYV-labymake/services/labymake-engine/) publish the bounded artifact contract consumed by
+  the game. Maker document/session persistence belongs to the EFYV platform, not this library.
 - [EFYV-labyrinth](../EFYV-labyrinth/) consumes the same schemas, models,
   collections, math, persistence, and importer/export metadata contracts.
 
