@@ -10,6 +10,11 @@ deterministic Unity artifact export.
 The Unity game and `EFYV-labybackend` deliberately live outside this node root. They consume exported
 artifacts and are not packaged into the Kubernetes node.
 
+## Browse
+
+- [Application declaration](app/README.md): EFYV pages, maker configuration, and integrations.
+- [Services](services/README.md): the node-owned engine and its protocol boundary.
+
 Compile and regenerate through the shared platform tooling:
 
 ```powershell

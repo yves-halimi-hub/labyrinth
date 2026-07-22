@@ -13,7 +13,7 @@ asset path.
   the atlas grid helpers: `ComputeAtlasLayout` (near-square columns/rows,
   columns >= rows), `GetAtlasFrameOrigin` (row-major frame-index to pixel origin),
   and `ExtractFrameFromAtlas` (the exact inverse of `PackFramesToAtlas`).
-  Item #27: `PushMetadataOnlyToUnityLiveHook` publishes ONLY the `.efyvlaby`
+  `PushMetadataOnlyToUnityLiveHook` publishes only the `.efyvlaby`
   (same validation and identity/atomic-publish machinery, no pixel payload and
   no PNG write) for LabyMake's live fast path when an edit changed no exported
   pixels; the declared `atlasWidth`/`atlasHeight` still pin the metadata to the
@@ -45,7 +45,7 @@ asset path.
   `MaxAtlasPixelCount`). Frame sizes divide the atlas; animations are named,
   positive-rate, ordered, non-overlapping, and within frame capacity. Gaps are
   allowed.
-- Atlas animations may carry OPTIONAL timing/playback members (item #10):
+- Atlas animations may carry optional timing/playback members:
   `frameDurationsMs` (exactly `frameCount` entries; `0` = inherit `fps`,
   positive entries are milliseconds capped by
   `Backend.Exporter.MaxFrameDurationMs`), `loopStart`/`loopEnd`
@@ -53,7 +53,7 @@ asset path.
   omitted when default — `fps` and the full frame range remain the fallback
   for every reader — and are validated by the same shared validator
   (`AnimationFrameDurations` / `AnimationLoopRange` causes).
-- Atlas animations may also carry an OPTIONAL `effects` array (item #7): each
+- Atlas animations may also carry an optional `effects` array: each
   descriptor is `{name, effectType, trigger}` plus optional
   `{colorRgba, durationMs, strength}`. `effectType` is one of
   `Backend.Exporter.EffectType*` (`flash`/`tint`/`particleHook`; particleHook
@@ -63,7 +63,7 @@ asset path.
   `Min/MaxEffectDurationMs` and `Min/MaxEffectStrength` (shared-validator
   cause `AnimationEffects`). The array is omitted when empty so effect-free
   documents stay byte-identical.
-- Documents may carry an OPTIONAL top-level `attachments` array (item #6):
+- Documents may carry an optional top-level `attachments` array:
   frame-indexed sub-element attachment records
   (`{frameIndex, subElement, x, y, zOrder}` plus `flipX`/`flipY` written only
   when true), validated by the single-sourced
@@ -73,10 +73,10 @@ asset path.
   `MaxAttachmentsPerFrame`; reports the first offending index) shared with
   the Unity importer. The array is omitted when null/empty so
   attachment-free documents stay byte-identical. The designer flattens the
-  attachment pixels into the atlas at export time; the records exist for
-  future dynamic consumers.
-- Documents may carry an OPTIONAL top-level `tileset` manifest block
-  (item #5): `{tileSize, tiles}` where the tile at list index i is FastGridMap
+  attachment pixels into the atlas at export time. The current Unity consumer
+  stores these records but does not render separate dynamic sub-element sprites.
+- Documents may carry an optional top-level `tileset` manifest block:
+  `{tileSize, tiles}` where the tile at list index i is FastGridMap
   short tile id i. It is validated by the single-sourced
   `FastExporter.TryValidateTilesetManifest` (per-cause
   `TilesetManifestError`; positive `tileSize`, a non-empty bounded tile-name

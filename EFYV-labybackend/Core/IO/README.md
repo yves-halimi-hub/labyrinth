@@ -10,14 +10,14 @@ paths.
 - [FastImporter.cs](FastImporter.cs) streams an existing metadata file through
   `System.Text.Json` into `EFYVJsonFormat`. `TryParse` returns the tri-state
   `EfyvParseResult` (Missing / Malformed / Valid); `ParseEfyvFile` is the thin
-  historical wrapper over the same read path.
+  compatibility wrapper over the same read path.
 - [FastSaveEngine.cs](FastSaveEngine.cs) persists the unmanaged
   `PlayerMetaSchema` image inside a versioned envelope: a
   `{magic, version, CRC32-of-payload}` little-endian header
   (`EFYVLabyrinthConfig.Backend.Save`) followed by the raw struct bytes.
   Writes stage to a dotted temporary sibling and land via
   `File.Replace`/`File.Move` through the bounded retry.
-- [FastMapFile.cs](FastMapFile.cs) (item #5) is the versioned binary map
+- [FastMapFile.cs](FastMapFile.cs) is the versioned binary map
   container (`.efyvmap`): `FastMapExporter` writes `MapFileData` (dimensions,
   tileset reference, row-major int16 tile ids, prop placements) behind the
   same `{magic "EFYM", version, CRC32-of-payload}` little-endian envelope the

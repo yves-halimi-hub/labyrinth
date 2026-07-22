@@ -11,12 +11,12 @@ Named data views shared across editor, game, exporter, and importer boundaries.
   viewport, and editor tool state.
 - [SharedData.cs](SharedData.cs) contains `HitboxData` plus the JSON DTOs
   `EFYVJsonFormat`, `AtlasMetadataJson`, `AnimationMetadataJson`,
-  `EffectDescriptorJson` (item #7: one authored runtime-effect descriptor —
+  `EffectDescriptorJson` (one authored runtime-effect descriptor —
   name + params + trigger tag, numeric params nullable with shared defaults),
-  `AttachmentJson` (item #6: one frame-indexed sub-element attachment record —
+  `AttachmentJson` (one frame-indexed sub-element attachment record —
   safe-stem `subElement` name, canvas-space pivot position, `zOrder`, and
   nullable flips that resolve to false when absent), `TilesetManifestJson`
-  (item #5: the optional documentVersion-5 tile-ID manifest —
+  (the optional documentVersion-5 tile-ID manifest —
   `{tileSize, tiles}` where list index i is FastGridMap short tile id i;
   `EFYVJsonFormat.tileset` is null/absent on every non-tileset document), and
   `HitboxJson`.

@@ -56,9 +56,9 @@ Nothing in this directory is referenced by the game or editor runtime.
 - [DataModelsDeepTests.cs](DataModelsDeepTests.cs): bit-exact schema-block
   reference model with canaries, save-struct byte layout pins, property-to-slot
   mapping for every model wrapper, bool/string-hash edge semantics, shared JSON
-  wire contracts, and cross-constant config invariants (including the item #10
+  wire contracts, and cross-constant config invariants (including the
   documentVersion range semantics and the per-frame duration wire cap).
-- [AnimationTimingDeepTests.cs](AnimationTimingDeepTests.cs): the item #10 atlas
+- [AnimationTimingDeepTests.cs](AnimationTimingDeepTests.cs): the atlas
   timing/playback metadata contract (frameDurationsMs/loopStart/loopEnd/pingPong
   validation matrix, exporter round trip with optional members omitted when
   default, legacy documents parsing as absent) and full reference-model sweeps
@@ -66,13 +66,13 @@ Nothing in this directory is referenced by the game or editor runtime.
   zero-amplitude verbatim copies, impact-frame flash semantics, alpha
   preservation).
 - [SubElementAttachmentDeepTests.cs](SubElementAttachmentDeepTests.cs): the
-  item #6 wire surface — the shared `TryValidateAttachments` gate (safe-stem
+  attachment wire surface — the shared `TryValidateAttachments` gate (safe-stem
   names, frame/zOrder bounds, the per-frame cap with exact offending-index
   reporting), the documentVersion-4 writer (attachments after atlas, pinned
   per-entry member order, flips written only when true, omission when
   null/empty with byte identity to the pre-attachment overload), the parse
   round trip, and exporter rejection of invalid records.
-- [EffectsFiltersDeepTests.cs](EffectsFiltersDeepTests.cs): the item #7 surface —
+- [EffectsFiltersDeepTests.cs](EffectsFiltersDeepTests.cs): the effects and filters surface —
   outline (8-neighborhood silhouette expansion against a naive reference,
   silhouette pixels never recolored, aliasing safety), glow (hard-rim radius 0,
   blur-spread halo alpha decay, source-over-halo compositing), HSV color shift
@@ -83,7 +83,7 @@ Nothing in this directory is referenced by the game or editor runtime.
   byte stability), and the single-sourced PNG CRC (ISO-HDLC check vector,
   encoder chunk CRCs validated via `FastCrc32`, decoder round trip, and the
   structural no-private-table pin on both codecs).
-- [MapPipelineDeepTests.cs](MapPipelineDeepTests.cs): the item #5 wire surface -
+- [MapPipelineDeepTests.cs](MapPipelineDeepTests.cs): the map wire surface —
   the .efyvmap container (envelope bytes, payload layout, deterministic round
   trips, exact-size accounting, atomic republish with no stray temporaries,
   the shared `FastMapExporter.TryValidate` gate matrix, and a

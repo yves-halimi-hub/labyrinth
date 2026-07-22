@@ -15,7 +15,7 @@ Unity-facing gameplay code built on the backend's compact schemas, math, collect
 | [Interfaces](Interfaces/README.md) | Damage and pooling contracts |
 | [Items](Items/README.md) | Compact runtime item values |
 | [Managers](Managers/README.md) | Central loops, pools, maps, progression, and saves |
-| [Spawning](Spawning/README.md) | Item #4: the data-to-prefab factory + debug spawn-palette state machine |
+| [Spawning](Spawning/README.md) | Data-to-prefab factory and debug spawn-palette state machine |
 | [Utils](Utils/README.md) | Singleton, vector, and transform bridges |
 | [Weapons](Weapons/README.md) | Weapon lifecycle, archetypes, and implementations |
 

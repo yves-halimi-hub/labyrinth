@@ -2,7 +2,7 @@
 
 [Up to Core](../README.md)
 
-Item #4: the "the game debugger knows what to spawn" loop - turning a freshly
+The game debugger's spawn loop turns a freshly
 imported `.efyvlaby` asset into a live, pooled game object without hand-building
 a prefab per asset.
 
@@ -20,7 +20,7 @@ rejected cleanly.
 
 The factory binds through the pooled spawn **before** `OnSpawn` (a
 `PoolManager.Spawn` overload takes a pre-spawn hook), so the clone drives the
-item #13 flipbook animation and item #14 hurtbox collider (living entities) and
+imported flipbook animation and hurtbox collider (living entities) and
 registers in the central animation loop (props) - the same order the scene
 bootstrap uses.
 

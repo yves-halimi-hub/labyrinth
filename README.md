@@ -1,6 +1,6 @@
 # EFYV Labyrinth System
 
-[EFYV Games](../../README.md) / [Game repositories](../README.md) / Labyrinth
+[EFYV Games](https://github.com/yves-halimi-hub/EFYV-games) / [Game repositories](https://github.com/yves-halimi-hub/EFYV-games/tree/main/games) / Labyrinth
 
 This repository contains the Labyrinth game, its shared runtime foundation, and the declaration-driven
 LabyMake EFYV node.
@@ -14,6 +14,7 @@ LabyMake EFYV node.
 | LabyMake validation and deterministic Unity artifact export | [`labymake-engine`](EFYV-labymake/services/labymake-engine/) |
 | Unity gameplay, entities, managers, weapons, pooling, import, or editor integration | [EFYV Labyrinth](EFYV-labyrinth/README.md) |
 | Existing game verification | [Backend tests](EFYV-labybackend/Tests/README.md) and [game/editor tests](EFYV-labyrinth/Tests/README.md) |
+| Repository automation and release workflows | [GitHub automation](.github/README.md) |
 
 ## System Shape
 
@@ -45,7 +46,7 @@ Every component uses the same documentation pattern:
 
 ## Verify Everything
 
-The backend suite targets `net8.0`; the game suite targets `net10.0`. The new `labymake-engine`
+The backend suite targets `net8.0`; the game suite targets `net10.0`. The `labymake-engine`
 targets `net8.0`. Full verification needs both SDKs. Run from this repository root:
 
 ```powershell

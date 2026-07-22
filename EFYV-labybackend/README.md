@@ -51,13 +51,13 @@ or editor.
 
 ## Compatibility rules
 
-- Schema enum values are storage offsets. Changing or reusing an offset is a data
-  migration, not a refactor.
+- Schema enum values are storage offsets. Changing or reusing an offset changes
+  persisted data and requires explicit conversion; it is not a source-only refactor.
 - Packed pixel values are RGBA bytes in a `uint`, with red in the low byte and
   alpha in the high byte.
-- The current save format is a raw `PlayerMetaSchema` memory image. It has no
-  version, magic value, or checksum and therefore accepts arbitrary full-length
-  data and ignores trailing bytes.
+- The current save format wraps the raw `PlayerMetaSchema` memory image in a
+  versioned envelope containing magic bytes and a payload CRC. Loading requires
+  an exact-length, matching-version envelope and rejects corrupted or trailing data.
 - Atlas export validates each output before publication, but PNG and metadata are
   two separately published files; a failure during the second publication has no
   cross-file transaction rollback.

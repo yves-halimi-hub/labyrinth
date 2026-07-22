@@ -14,7 +14,7 @@ Engine-neutral scalar, raster, deformation, procedural, and random algorithms.
   tiny finite vectors normalize correctly (exact zero stays zero).
 - [FastRandom.cs](FastRandom.cs): `FastRandomState`, an instance xorshift32 PRNG
   struct (isolated deterministic streams for tools/generators), plus the static
-  `FastRandom` facade delegating to one shared state with historical seed and
+  `FastRandom` facade delegating to one shared state with established seed and
   sequence compatibility. Numeric ranges (64-bit span, no wide-range collapse),
   a Lemire-reduced `RangeUnbiased` (not sequence-compatible with `Range`), and
   uniform rejection sampling inside the unit disk.
@@ -32,7 +32,8 @@ Engine-neutral scalar, raster, deformation, procedural, and random algorithms.
   caller buffers: `GenerateMazeRecursiveBacktracker` (perfect maze) and
   `GenerateRoomsAndCorridors` (non-overlapping rooms joined by L-corridors).
 - [FastDeformation.cs](FastDeformation.cs): frame generation over raw pixel
-  buffers — toon walk, multi-wave radial jitter, and the item #10 presets:
+  buffers — toon walk, multi-wave radial jitter, and the bob/breathe and
+  shake/hit-flash presets:
   `GenerateBobBreatheFrame` (sine bob translation plus bottom-anchored breathe
   squash; the breathe amplitude is capped by
   `Deformation.MaxBreatheAmplitude` so the scale never reaches zero, and zero

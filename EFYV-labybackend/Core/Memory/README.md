@@ -14,7 +14,7 @@ Low-allocation operations over unmanaged arrays and packed RGBA buffers.
   channels accumulate alpha-premultiplied and are un-premultiplied once when
   packing the destination, so fully transparent neighbors contribute no color
   and sprite edges fade in alpha without darkening toward halo colors; a
-  zero-alpha average packs as exactly zero. It also carries the item #7 filter
+  zero-alpha average packs as exactly zero. It also carries these filter
   primitives: `Outline` (1px 8-neighborhood expansion of the alpha>0
   silhouette in a chosen color; silhouette pixels are never recolored),
   `Glow` (silhouette+rim flooded with the glow color, box-blurred by radius —
