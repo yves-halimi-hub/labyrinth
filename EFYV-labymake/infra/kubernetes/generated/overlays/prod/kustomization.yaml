@@ -6,8 +6,6 @@ namespace: efyv-labymake-prod
 resources:
 - namespace.yaml
 - ../../base
-- hpa.yaml
-- pdb.yaml
 - network-policy.yaml
 patches:
 - path: resources.yaml

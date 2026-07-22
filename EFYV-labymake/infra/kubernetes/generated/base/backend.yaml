@@ -162,7 +162,7 @@ spec:
         - name: EFYV_PLAN_PATH
           value: /etc/efyv/platform-plan.json
         - name: EFYV_PLAN_SHA256
-          value: f3d5482e61ab8ee334c823fa551c52829c8833d27b0ecd9794da82f1a8c3b964
+          value: b321bc9fdd27881549deea461349aae875209a509641dfa60f6bbcbb33f780d5
         - name: EFYV_PROTO_DESCRIPTOR_ROOT
           value: /etc/efyv/protobuf-descriptors
         livenessProbe:
@@ -188,7 +188,20 @@ spec:
           limits:
             cpu: 1000m
             memory: 768Mi
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
+          runAsGroup: 10001
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
         volumeMounts:
+        - name: backend-data
+          mountPath: /app/.efyv/data
         - name: runtime-plan
           mountPath: /etc/efyv/platform-plan.json
           subPath: platform-plan.json
@@ -196,6 +209,8 @@ spec:
         - name: runtime-protobuf-descriptors
           mountPath: /etc/efyv/protobuf-descriptors
           readOnly: true
+        - name: tmp
+          mountPath: /tmp
       initContainers:
       - name: wait-for-deps
         image: "busybox:1.37"
@@ -203,7 +218,13 @@ spec:
         - sh
         - "-c"
         - "until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done\nuntil nc -z redis 6379; do echo waiting for redis; sleep 2; done"
+      securityContext:
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
       volumes:
+      - name: backend-data
+        persistentVolumeClaim:
+          claimName: efyv-labymake-backend-data
       - name: runtime-plan
         configMap:
           name: efyv-labymake-runtime-plan
@@ -213,3 +234,7 @@ spec:
           items:
           - key: labymake-engine.pb
             path: .efyv/build/custom-services/labymake-engine/descriptor.pb
+      - name: tmp
+        emptyDir: {}
+  strategy:
+    type: Recreate

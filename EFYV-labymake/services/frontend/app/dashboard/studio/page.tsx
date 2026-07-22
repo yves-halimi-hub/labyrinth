@@ -44,9 +44,9 @@ const SPEC: MakerStudioSpec = {
   "workspace": {
     "kind": "canvas",
     "selection": "pixel-layer-frame",
-    "width field": "canvasWidth",
-    "height field": "canvasHeight",
-    "animations field": "animations"
+    "width_field": "canvasWidth",
+    "height_field": "canvasHeight",
+    "animations_field": "animations"
   },
   "panels": [
     {

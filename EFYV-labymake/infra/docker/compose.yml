@@ -5,10 +5,10 @@ services:
   frontend:
     image: "efyv/web:${EFYV_VERSION:-0.1.0}"
     environment:
-      BACKEND_BASE_URL: "http://${BACKEND_HOST}:${BACKEND_PORT}"
+      BACKEND_BASE_URL: "http://backend:8000"
       NODE_ENV: "${NODE_ENV:-production}"
       EFYV_PLAN_PATH: /etc/efyv/platform-plan.json
-      EFYV_PLAN_SHA256: f3d5482e61ab8ee334c823fa551c52829c8833d27b0ecd9794da82f1a8c3b964
+      EFYV_PLAN_SHA256: b321bc9fdd27881549deea461349aae875209a509641dfa60f6bbcbb33f780d5
     depends_on:
       backend:
         condition: service_healthy
@@ -19,11 +19,9 @@ services:
     healthcheck:
       test:
       - CMD
-      - wget
-      - "-q"
-      - "-O"
-      - "-"
-      - "http://127.0.0.1:3210/"
+      - node
+      - "-e"
+      - "fetch(\"http://127.0.0.1:3210/\").then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
       interval: 15s
       timeout: 5s
       retries: 5
@@ -32,9 +30,9 @@ services:
   backend:
     image: "efyv/backend:${EFYV_VERSION:-0.1.0}"
     environment:
-      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
-      REDIS_URL: "redis://:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}/0"
-      COMPUTE_URL: "http://${COMPUTE_HOST}:${COMPUTE_PORT}"
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+      COMPUTE_URL: "http://compute:9000"
       APP_ENV: "${APP_ENV:-dev}"
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
       CORS_ORIGINS: "${CORS_ORIGINS}"
@@ -48,7 +46,7 @@ services:
       SMTP_USER: "${SMTP_USER:-}"
       SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
       EFYV_PLAN_PATH: /etc/efyv/platform-plan.json
-      EFYV_PLAN_SHA256: f3d5482e61ab8ee334c823fa551c52829c8833d27b0ecd9794da82f1a8c3b964
+      EFYV_PLAN_SHA256: b321bc9fdd27881549deea461349aae875209a509641dfa60f6bbcbb33f780d5
       EFYV_PROTO_DESCRIPTOR_ROOT: /etc/efyv/protobuf-descriptors
     depends_on:
       postgres:
@@ -60,36 +58,41 @@ services:
     ports:
     - "${HOST_BIND:-127.0.0.1}:8000:8000"
     volumes:
+    - "backend-data:/app/.efyv/data"
     - "../../.efyv/build/platform-plan.json:/etc/efyv/platform-plan.json:ro"
     - "../../.efyv/build/custom-services/labymake-engine/descriptor.pb:/etc/efyv/protobuf-descriptors/.efyv/build/custom-services/labymake-engine/descriptor.pb:ro"
     healthcheck:
       test:
       - CMD
-      - wget
-      - "-q"
-      - "-O"
-      - "-"
-      - "http://127.0.0.1:8000/health/ready"
+      - python
+      - "-c"
+      - "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/health/ready\", timeout=4).read()"
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 30s
+    user: "10001:10001"
+    security_opt:
+    - "no-new-privileges:true"
+    cap_drop:
+    - ALL
+    read_only: true
+    tmpfs:
+    - "/tmp:rw,nosuid,nodev"
     restart: "${RESTART_POLICY:-unless-stopped}"
   compute:
     image: "efyv/compute:${EFYV_VERSION:-0.1.0}"
     environment:
       EFYV_PLAN_PATH: /etc/efyv/platform-plan.json
-      EFYV_PLAN_SHA256: f3d5482e61ab8ee334c823fa551c52829c8833d27b0ecd9794da82f1a8c3b964
+      EFYV_PLAN_SHA256: b321bc9fdd27881549deea461349aae875209a509641dfa60f6bbcbb33f780d5
     volumes:
     - "../../.efyv/build/platform-plan.json:/etc/efyv/platform-plan.json:ro"
     healthcheck:
       test:
       - CMD
-      - wget
-      - "-q"
-      - "-O"
-      - "-"
-      - "http://127.0.0.1:9000/health/ready"
+      - python
+      - "-c"
+      - "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:9000/health/ready\", timeout=4).read()"
       interval: 15s
       timeout: 5s
       retries: 5
@@ -135,6 +138,9 @@ services:
     image: "efyv-labymake-labymake-engine:${EFYV_TAG:-local}"
     environment:
       EFYV_GRPC_PORT: "50051"
+    healthcheck:
+      disable: true
     restart: "${RESTART_POLICY:-unless-stopped}"
 volumes:
+  backend-data: {}
   pgdata: {}
