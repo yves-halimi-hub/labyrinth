@@ -3,10 +3,15 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <Deterministic>true</Deterministic>
   </PropertyGroup>
   <ItemGroup>
-    <Protobuf Include="proto/labymake.proto" GrpcServices="Server" />
+    <ProjectReference Include="../../../Shared/EFYV.Labyrinth.Artifacts/EFYV.Labyrinth.Artifacts.csproj" />
+    <Protobuf Include="proto/labymake.proto" GrpcServices="Both" />
+    <Protobuf Include="../../../Shared/EFYV.Labyrinth.Artifacts/Protocol/labymake_transfer.proto" GrpcServices="Both" Link="proto/labymake_transfer.proto" />
     <PackageReference Include="Grpc.AspNetCore" Version="2.71.0" />
+    <PackageReference Include="Grpc.Net.Client" Version="2.71.0" />
     <PackageReference Include="Grpc.AspNetCore.HealthChecks" Version="2.71.0" />
     <PackageReference Include="Grpc.Tools" Version="2.72.0" PrivateAssets="All" />
   </ItemGroup>

@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text.Json;
+using System.Threading;
+using EFYV.Runtime.Media;
 using EFYVBackend.Core.Data;
 using EFYVBackend.Core.IO;
 using EFYVBackend.Core.Models;
@@ -10,6 +12,20 @@ using BackendConfig = EFYVBackend.Core.Data.EFYVLabyrinthConfig.Backend;
 
 namespace EFYVBackend.Core.Export
 {
+    public readonly struct FastArtifactPayload
+    {
+        public FastArtifactPayload(string stem, byte[] png, byte[] metadata)
+        {
+            Stem = stem;
+            Png = png;
+            Metadata = metadata;
+        }
+
+        public string Stem { get; }
+        public byte[] Png { get; }
+        public byte[] Metadata { get; }
+    }
+
     // Per-cause atlas metadata validation outcome (#16b/#16d). Shared by the
     // exporter, the LabyMake export engine/validator, and the Unity importer so
     // every path enforces the exact same contract (including the Unity texture
@@ -244,6 +260,58 @@ namespace EFYVBackend.Core.Export
                 null);
         }
 
+        public static FastArtifactPayload BuildArtifact<T>(
+            string targetAssetType,
+            Dictionary<string, object> assetProperties,
+            List<HitboxJson> hitboxes,
+            T[] atlasData,
+            int atlasWidth,
+            int atlasHeight,
+            AtlasMetadataJson atlasMetadata,
+            string baseAssetType = null,
+            List<AttachmentJson> attachments = null,
+            TilesetManifestJson? tilesetManifest = null,
+            CancellationToken cancellationToken = default) where T : unmanaged
+        {
+            ValidateArtifactInputs(
+                targetAssetType,
+                assetProperties,
+                hitboxes,
+                atlasData,
+                atlasWidth,
+                atlasHeight,
+                atlasMetadata,
+                attachments,
+                tilesetManifest,
+                true);
+            string entityName = ResolveEntityName(assetProperties);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            byte[] png;
+            using (var pngStream = new MemoryStream())
+            {
+                FastPngEncoder.Write(pngStream, atlasData, atlasWidth, atlasHeight, true, cancellationToken);
+                png = pngStream.ToArray();
+            }
+
+            byte[] metadata;
+            using (var metadataStream = new MemoryStream())
+            {
+                WriteJson(
+                    metadataStream,
+                    targetAssetType,
+                    baseAssetType,
+                    assetProperties,
+                    hitboxes,
+                    atlasMetadata,
+                    attachments,
+                    tilesetManifest,
+                    cancellationToken);
+                metadata = metadataStream.ToArray();
+            }
+            return new FastArtifactPayload(entityName, png, metadata);
+        }
+
         private static unsafe void PushToUnityLiveHook<T>(
             string rawArtDir,
             string targetAssetType,
@@ -263,20 +331,17 @@ namespace EFYVBackend.Core.Export
             bool writeImage = true) where T : unmanaged
         {
             if (string.IsNullOrWhiteSpace(rawArtDir)) throw new ArgumentException(null, nameof(rawArtDir));
-            if (string.IsNullOrWhiteSpace(targetAssetType)) throw new ArgumentException(null, nameof(targetAssetType));
-            if (assetProperties == null) throw new ArgumentNullException(nameof(assetProperties));
-            if (hitboxes == null) throw new ArgumentNullException(nameof(hitboxes));
-            if (writeImage) ValidateAtlas(atlasData, atlasWidth, atlasHeight);
-            else if (atlasWidth <= 0 || atlasHeight <= 0)
-                throw new ArgumentOutOfRangeException(nameof(atlasWidth));
-            if (atlasMetadata.HasValue) ValidateMetadata(atlasMetadata.Value, atlasWidth, atlasHeight);
-            if (!TryValidateAttachments(attachments, out int invalidAttachmentIndex))
-                throw new ArgumentException(
-                    "attachments[" + invalidAttachmentIndex + "]",
-                    nameof(attachments));
-            if (tilesetManifest.HasValue &&
-                !TryValidateTilesetManifest(tilesetManifest.Value, atlasMetadata, out TilesetManifestError tilesetError))
-                throw new ArgumentException(tilesetError.ToString(), nameof(tilesetManifest));
+            ValidateArtifactInputs(
+                targetAssetType,
+                assetProperties,
+                hitboxes,
+                atlasData,
+                atlasWidth,
+                atlasHeight,
+                atlasMetadata,
+                attachments,
+                tilesetManifest,
+                writeImage);
 
             string rootDirectory = Path.GetFullPath(rawArtDir);
             Directory.CreateDirectory(rootDirectory);
@@ -285,21 +350,7 @@ namespace EFYVBackend.Core.Export
             // fallbacks (type-suffixed stem here, KeyNotFoundException in the
             // export engine, an "UnknownEntity" collapse in the Unity importer)
             // disagreed with each other and silently aliased unrelated assets.
-            string entityName;
-            object entityNameValue;
-            if (assetProperties.TryGetValue(BackendConfig.Exporter.FieldEntityName, out entityNameValue) && entityNameValue != null)
-            {
-                entityName = Convert.ToString(entityNameValue, CultureInfo.InvariantCulture);
-            }
-            else if (assetProperties.TryGetValue(BackendConfig.Exporter.FieldAssetName, out entityNameValue) && entityNameValue != null)
-            {
-                entityName = Convert.ToString(entityNameValue, CultureInfo.InvariantCulture);
-            }
-            else
-            {
-                throw new ArgumentException(null, nameof(assetProperties));
-            }
-            if (!SafePathPolicy.IsSafeFileStem(entityName)) throw new ArgumentException(null, nameof(entityName));
+            string entityName = ResolveEntityName(assetProperties);
 
             string jsonPath = SafePathPolicy.GetContainedPath(rootDirectory, entityName + BackendConfig.Exporter.EfyvExtension);
             string pngPath = SafePathPolicy.GetContainedPath(rootDirectory, entityName + BackendConfig.Exporter.PngExtension);
@@ -334,6 +385,46 @@ namespace EFYVBackend.Core.Export
                 if (writeImage) DeleteIfPresent(temporaryPngPath);
                 DeleteIfPresent(temporaryJsonPath);
             }
+        }
+
+        private static void ValidateArtifactInputs<T>(
+            string targetAssetType,
+            Dictionary<string, object> assetProperties,
+            List<HitboxJson> hitboxes,
+            T[] atlasData,
+            int atlasWidth,
+            int atlasHeight,
+            AtlasMetadataJson? atlasMetadata,
+            List<AttachmentJson> attachments,
+            TilesetManifestJson? tilesetManifest,
+            bool writeImage) where T : unmanaged
+        {
+            if (string.IsNullOrWhiteSpace(targetAssetType)) throw new ArgumentException(null, nameof(targetAssetType));
+            if (assetProperties == null) throw new ArgumentNullException(nameof(assetProperties));
+            if (hitboxes == null) throw new ArgumentNullException(nameof(hitboxes));
+            if (writeImage) ValidateAtlas(atlasData, atlasWidth, atlasHeight);
+            else if (atlasWidth <= 0 || atlasHeight <= 0) throw new ArgumentOutOfRangeException(nameof(atlasWidth));
+            if (atlasMetadata.HasValue) ValidateMetadata(atlasMetadata.Value, atlasWidth, atlasHeight);
+            if (!TryValidateAttachments(attachments, out int invalidAttachmentIndex))
+                throw new ArgumentException("attachments[" + invalidAttachmentIndex + "]", nameof(attachments));
+            if (tilesetManifest.HasValue &&
+                !TryValidateTilesetManifest(tilesetManifest.Value, atlasMetadata, out TilesetManifestError tilesetError))
+                throw new ArgumentException(tilesetError.ToString(), nameof(tilesetManifest));
+            _ = ResolveEntityName(assetProperties);
+        }
+
+        private static string ResolveEntityName(Dictionary<string, object> assetProperties)
+        {
+            object value;
+            string entityName;
+            if (assetProperties.TryGetValue(BackendConfig.Exporter.FieldEntityName, out value) && value != null)
+                entityName = Convert.ToString(value, CultureInfo.InvariantCulture);
+            else if (assetProperties.TryGetValue(BackendConfig.Exporter.FieldAssetName, out value) && value != null)
+                entityName = Convert.ToString(value, CultureInfo.InvariantCulture);
+            else
+                throw new ArgumentException(null, nameof(assetProperties));
+            if (!SafePathPolicy.IsSafeFileStem(entityName)) throw new ArgumentException(null, nameof(entityName));
+            return entityName;
         }
 
         private static unsafe void ValidateAtlas<T>(T[] atlasData, int atlasWidth, int atlasHeight) where T : unmanaged
@@ -587,8 +678,26 @@ namespace EFYVBackend.Core.Export
                 BackendConfig.IO.DefaultFileStreamBufferSize,
                 FileOptions.SequentialScan))
             {
-                using (Utf8JsonWriter writer = new Utf8JsonWriter(stream))
-                {
+                WriteJson(stream, targetAssetType, baseAssetType, assetProperties, hitboxes,
+                    atlasMetadata, attachments, tilesetManifest, CancellationToken.None);
+                stream.Flush(true);
+            }
+        }
+
+        private static void WriteJson(
+            Stream stream,
+            string targetAssetType,
+            string baseAssetType,
+            Dictionary<string, object> assetProperties,
+            List<HitboxJson> hitboxes,
+            AtlasMetadataJson? atlasMetadata,
+            List<AttachmentJson> attachments,
+            TilesetManifestJson? tilesetManifest,
+            CancellationToken cancellationToken)
+        {
+            using (Utf8JsonWriter writer = new Utf8JsonWriter(stream, new JsonWriterOptions { SkipValidation = false }))
+            {
+                    cancellationToken.ThrowIfCancellationRequested();
                     writer.WriteStartObject();
                     writer.WriteNumber(
                         BackendConfig.Exporter.FieldDocumentVersion,
@@ -600,6 +709,7 @@ namespace EFYVBackend.Core.Export
                     writer.WriteStartObject(BackendConfig.Exporter.FieldProperties);
                     foreach (KeyValuePair<string, object> property in assetProperties)
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
                         WriteProperty(writer, property.Key, property.Value);
                     }
                     writer.WriteEndObject();
@@ -607,6 +717,7 @@ namespace EFYVBackend.Core.Export
                     writer.WriteStartArray(BackendConfig.Exporter.FieldHitboxes);
                     for (int i = 0; i < hitboxes.Count; i++)
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
                         HitboxJson hitbox = hitboxes[i];
                         writer.WriteStartObject();
                         writer.WriteNumber(BackendConfig.Exporter.FieldFrameIndex, hitbox.frameIndex);
@@ -633,6 +744,7 @@ namespace EFYVBackend.Core.Export
                         writer.WriteStartArray(BackendConfig.Exporter.FieldAttachments);
                         for (int i = 0; i < attachments.Count; i++)
                         {
+                            cancellationToken.ThrowIfCancellationRequested();
                             AttachmentJson attachment = attachments[i];
                             writer.WriteStartObject();
                             writer.WriteNumber(BackendConfig.Exporter.FieldFrameIndex, attachment.frameIndex);
@@ -659,15 +771,16 @@ namespace EFYVBackend.Core.Export
                         writer.WriteNumber(BackendConfig.Exporter.FieldTileSize, manifest.tileSize);
                         writer.WriteStartArray(BackendConfig.Exporter.FieldTiles);
                         for (int i = 0; i < manifest.tiles.Count; i++)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
                             writer.WriteStringValue(manifest.tiles[i]);
+                        }
                         writer.WriteEndArray();
                         writer.WriteEndObject();
                     }
 
                     writer.WriteEndObject();
                     writer.Flush();
-                }
-                stream.Flush(true);
             }
         }
 
@@ -799,29 +912,12 @@ namespace EFYVBackend.Core.Export
 
         public static void ComputeAtlasLayout(int frameCount, int frameWidth, int frameHeight, out int columns, out int rows)
         {
-            if (frameCount <= 0) throw new ArgumentOutOfRangeException(nameof(frameCount));
-            if (frameWidth <= 0) throw new ArgumentOutOfRangeException(nameof(frameWidth));
-            if (frameHeight <= 0) throw new ArgumentOutOfRangeException(nameof(frameHeight));
-
-            // Near-square grid: columns is the smallest count whose square covers every
-            // frame (so columns >= rows), and rows is the minimum row count for that
-            // column count. Frames are placed row-major, matching the Unity importer's
-            // slice order.
-            columns = (int)System.Math.Ceiling(System.Math.Sqrt(frameCount));
-            if (columns < 1) columns = 1;
-            rows = (frameCount + columns - 1) / columns;
-            _ = checked(columns * frameWidth);
-            _ = checked(rows * frameHeight);
+            AtlasLayout.ComputeSquare(frameCount, frameWidth, frameHeight, out columns, out rows, out _, out _);
         }
 
         public static void GetAtlasFrameOrigin(int frameIndex, int columns, int frameWidth, int frameHeight, out int destX, out int destY)
         {
-            if (frameIndex < 0) throw new ArgumentOutOfRangeException(nameof(frameIndex));
-            if (columns <= 0) throw new ArgumentOutOfRangeException(nameof(columns));
-            if (frameWidth <= 0) throw new ArgumentOutOfRangeException(nameof(frameWidth));
-            if (frameHeight <= 0) throw new ArgumentOutOfRangeException(nameof(frameHeight));
-            destX = checked((frameIndex % columns) * frameWidth);
-            destY = checked((frameIndex / columns) * frameHeight);
+            AtlasLayout.GetOrigin(frameIndex, columns, frameWidth, frameHeight, out destX, out destY);
         }
 
         public static unsafe void ExtractFrameFromAtlas<T>(

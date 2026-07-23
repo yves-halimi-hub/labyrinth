@@ -1,0 +1,7 @@
+{
+  "name": "com.efyv.runtime.media",
+  "version": "1.0.0",
+  "displayName": "EFYV Runtime Media",
+  "description": "Deterministic, engine-neutral RGBA, atlas, PNG and CRC primitives with an optional versioned native-kernel seam.",
+  "unity": "6000.6"
+}

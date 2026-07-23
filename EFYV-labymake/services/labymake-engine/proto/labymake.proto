@@ -27,4 +27,6 @@ message ExportReply {
   string content_type = 2;
   bytes bundle = 3;
   repeated Diagnostic diagnostics = 4;
+  string artifact_reference = 5;
+  string sha256 = 6;
 }

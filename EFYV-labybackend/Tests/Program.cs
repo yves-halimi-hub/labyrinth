@@ -118,7 +118,13 @@ namespace EFYVBackend.Verification
                 ,("map file corruption matrix", TestMapFileCorruptionMatrix)
                 ,("tileset manifest validator matrix", TestTilesetManifestValidatorMatrix)
                 ,("tileset wire writer and round trip", TestTilesetWireWriterAndRoundTrip)
+                ,("compatibility golden vectors", TestCompatibilityGoldenVectors)
+                ,("runtime kernel managed/native parity", TestRuntimeKernelParity)
             };
+
+            string filter = Environment.GetEnvironmentVariable("EFYV_TEST_FILTER");
+            if (!string.IsNullOrWhiteSpace(filter))
+                tests = Array.FindAll(tests, test => test.Name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0);
 
             int failures = 0;
             for (int i = 0; i < tests.Length; i++)

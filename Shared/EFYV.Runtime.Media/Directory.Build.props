@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)BuildOutput~/bin/</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)BuildOutput~/obj/</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>

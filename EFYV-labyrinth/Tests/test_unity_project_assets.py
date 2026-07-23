@@ -30,6 +30,7 @@ TESTS_DIR = pathlib.Path(__file__).resolve().parent
 GAME_ROOT = TESTS_DIR.parent
 REPO_ROOT = GAME_ROOT.parent
 BACKEND_CORE = REPO_ROOT / "EFYV-labybackend" / "Core"
+RUNTIME_MEDIA = REPO_ROOT / "Shared" / "EFYV.Runtime.Media"
 BCL_PACKAGE = GAME_ROOT / "Packages" / "com.efyv.bclcompat"
 SCENE_PATH = GAME_ROOT / "Assets" / "Scenes" / "Labyrinth.unity"
 CONFIG_PATH = BACKEND_CORE / "Data" / "EFYV-LabyrinthConfig.cs"
@@ -37,6 +38,7 @@ CONFIG_PATH = BACKEND_CORE / "Data" / "EFYV-LabyrinthConfig.cs"
 META_ROOTS = (
     GAME_ROOT / "Assets",
     BACKEND_CORE,
+    RUNTIME_MEDIA,
     BCL_PACKAGE,
 )
 
@@ -163,6 +165,12 @@ class PackageGraphTests(unittest.TestCase):
         package = json.loads((target / "package.json").read_text(encoding="utf-8"))
         self.assertEqual("com.efyv.labybackend", package["name"])
 
+        media_dependency = manifest["dependencies"]["com.efyv.runtime.media"]
+        self.assertEqual("file:../../Shared/EFYV.Runtime.Media", media_dependency)
+        media_target = (GAME_ROOT / "Packages" / "../../Shared/EFYV.Runtime.Media").resolve()
+        self.assertEqual("com.efyv.runtime.media", json.loads(
+            (media_target / "package.json").read_text(encoding="utf-8"))["name"])
+
     def test_backend_package_root_excludes_tests(self):
         # The package root is Core on purpose: the sibling Tests directory and
         # its bin/obj DLLs must never be imported by Unity (duplicate types).
@@ -211,7 +219,7 @@ class PackageGraphTests(unittest.TestCase):
 class AssemblyDefinitionTests(unittest.TestCase):
     def load_all(self):
         asmdefs = {}
-        for root in (GAME_ROOT / "Assets", BACKEND_CORE):
+        for root in (GAME_ROOT / "Assets", BACKEND_CORE, RUNTIME_MEDIA):
             for path in root.rglob("*.asmdef"):
                 data = json.loads(path.read_text(encoding="utf-8"))
                 asmdefs[data["name"]] = (path, data)
@@ -220,7 +228,7 @@ class AssemblyDefinitionTests(unittest.TestCase):
     def test_expected_assemblies_exist(self):
         asmdefs = self.load_all()
         self.assertEqual(
-            {"EFYVBackend.Core", "EFYV.Game", "EFYV.Game.Editor"},
+            {"EFYV.Runtime.Media", "EFYVBackend.Core", "EFYV.Game", "EFYV.Game.Editor"},
             set(asmdefs))
 
     def test_references_resolve_and_scope_is_correct(self):
@@ -237,6 +245,8 @@ class AssemblyDefinitionTests(unittest.TestCase):
         self.assertIn("EFYV.Game", editor["references"])
         _, backend = asmdefs["EFYVBackend.Core"]
         self.assertTrue(backend.get("noEngineReferences"), "backend must stay engine-neutral")
+        _, media = asmdefs["EFYV.Runtime.Media"]
+        self.assertTrue(media.get("noEngineReferences"), "media must stay engine-neutral")
 
     def test_unsafe_code_flags_match_sources(self):
         asmdefs = self.load_all()
@@ -253,6 +263,9 @@ class AssemblyDefinitionTests(unittest.TestCase):
         backend_path, backend = asmdefs["EFYVBackend.Core"]
         if sources_use_unsafe(backend_path.parent):
             self.assertTrue(backend["allowUnsafeCode"], "backend sources use unsafe")
+        media_path, media = asmdefs["EFYV.Runtime.Media"]
+        if sources_use_unsafe(media_path.parent):
+            self.assertTrue(media["allowUnsafeCode"], "media sources use unsafe")
         game_path, game = asmdefs["EFYV.Game"]
         if sources_use_unsafe(game_path.parent, exclude="Editor"):
             self.assertTrue(game["allowUnsafeCode"], "game sources use unsafe")

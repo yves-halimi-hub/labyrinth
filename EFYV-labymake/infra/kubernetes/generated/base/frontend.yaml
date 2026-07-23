@@ -61,7 +61,7 @@ spec:
         - name: EFYV_PLAN_PATH
           value: /etc/efyv/platform-plan.json
         - name: EFYV_PLAN_SHA256
-          value: b321bc9fdd27881549deea461349aae875209a509641dfa60f6bbcbb33f780d5
+          value: efe324f30c06562370aa18de34fcf0f9409fc4bfbf138f76980f166aa9587796
         livenessProbe:
           httpGet:
             path: /

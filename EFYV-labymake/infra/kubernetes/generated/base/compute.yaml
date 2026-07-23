@@ -44,7 +44,7 @@ spec:
         - name: EFYV_PLAN_PATH
           value: /etc/efyv/platform-plan.json
         - name: EFYV_PLAN_SHA256
-          value: b321bc9fdd27881549deea461349aae875209a509641dfa60f6bbcbb33f780d5
+          value: efe324f30c06562370aa18de34fcf0f9409fc4bfbf138f76980f166aa9587796
         livenessProbe:
           httpGet:
             path: /health/live
@@ -68,12 +68,30 @@ spec:
           limits:
             cpu: 1000m
             memory: 512Mi
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
+          runAsGroup: 10001
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
         volumeMounts:
         - name: runtime-plan
           mountPath: /etc/efyv/platform-plan.json
           subPath: platform-plan.json
           readOnly: true
+        - name: tmp
+          mountPath: /tmp
+      securityContext:
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
       volumes:
       - name: runtime-plan
         configMap:
           name: efyv-labymake-runtime-plan
+      - name: tmp
+        emptyDir: {}

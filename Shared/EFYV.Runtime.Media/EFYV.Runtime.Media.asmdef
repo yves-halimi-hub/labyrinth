@@ -1,0 +1,14 @@
+{
+  "name": "EFYV.Runtime.Media",
+  "rootNamespace": "EFYV.Runtime.Media",
+  "references": [],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": true,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": true
+}

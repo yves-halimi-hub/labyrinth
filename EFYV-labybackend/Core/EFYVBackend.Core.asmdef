@@ -1,7 +1,9 @@
 {
     "name": "EFYVBackend.Core",
     "rootNamespace": "EFYVBackend.Core",
-    "references": [],
+    "references": [
+        "EFYV.Runtime.Media"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": true,

@@ -13,11 +13,39 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-within-namespace
+  name: allow-within-namespace-except-compute
 spec:
-  podSelector: {}
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/name
+      operator: NotIn
+      values:
+      - compute
   policyTypes:
   - Ingress
   ingress:
   - from:
     - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-compute-gateway-and-metrics
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: compute
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: In
+          values:
+          - backend
+          - prometheus
+    ports:
+    - protocol: TCP
+      port: 9000

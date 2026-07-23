@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.CompilerServices;
+using EFYV.Runtime.Media;
 using BackendConfig = EFYVBackend.Core.Data.EFYVLabyrinthConfig.Backend;
 
 namespace EFYVBackend.Core.Memory
@@ -36,74 +37,13 @@ namespace EFYVBackend.Core.Memory
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void BlendColor(ref uint destRgba, uint srcRgba)
         {
-            // Bit-shift extraction of RGBA bytes from the 32-bit uint
-            byte srcA = (byte)(srcRgba >> BackendConfig.Pixel.AlphaShift);
-            
-            if (srcA == BackendConfig.Pixel.TransparentAlpha)
-            {
-                return;
-            }
-            if (srcA == BackendConfig.Pixel.OpaqueAlpha) 
-            {
-                destRgba = srcRgba;
-                return;
-            }
-
-            byte destA = (byte)(destRgba >> BackendConfig.Pixel.AlphaShift);
-            if (destA == BackendConfig.Pixel.TransparentAlpha)
-            {
-                destRgba = srcRgba;
-                return;
-            }
-
-            byte srcR = (byte)srcRgba;
-            byte srcG = (byte)(srcRgba >> BackendConfig.Pixel.GreenShift);
-            byte srcB = (byte)(srcRgba >> BackendConfig.Pixel.BlueShift);
-            byte destR = (byte)destRgba;
-            byte destG = (byte)(destRgba >> BackendConfig.Pixel.GreenShift);
-            byte destB = (byte)(destRgba >> BackendConfig.Pixel.BlueShift);
-
-            const uint fullAlpha = BackendConfig.Pixel.OpaqueAlpha;
-            uint halfAlpha = fullAlpha >> BackendConfig.Math.SingleBitShift;
-            uint invAlpha = fullAlpha - srcA;
-
-            if (destA == BackendConfig.Pixel.OpaqueAlpha)
-            {
-                uint outR = ((uint)(srcR * srcA) + (uint)(destR * invAlpha) + halfAlpha) / fullAlpha;
-                uint outG = ((uint)(srcG * srcA) + (uint)(destG * invAlpha) + halfAlpha) / fullAlpha;
-                uint outB = ((uint)(srcB * srcA) + (uint)(destB * invAlpha) + halfAlpha) / fullAlpha;
-                destRgba = outR |
-                    (outG << BackendConfig.Pixel.GreenShift) |
-                    (outB << BackendConfig.Pixel.BlueShift) |
-                    (fullAlpha << BackendConfig.Pixel.AlphaShift);
-                return;
-            }
-
-            uint alphaNumerator = (srcA * fullAlpha) + (destA * invAlpha);
-            uint outAlpha = (alphaNumerator + halfAlpha) / fullAlpha;
-            uint channelR = ((uint)(srcR * srcA) * fullAlpha + (uint)(destR * destA) * invAlpha + (alphaNumerator >> BackendConfig.Math.SingleBitShift)) / alphaNumerator;
-            uint channelG = ((uint)(srcG * srcA) * fullAlpha + (uint)(destG * destA) * invAlpha + (alphaNumerator >> BackendConfig.Math.SingleBitShift)) / alphaNumerator;
-            uint channelB = ((uint)(srcB * srcA) * fullAlpha + (uint)(destB * destA) * invAlpha + (alphaNumerator >> BackendConfig.Math.SingleBitShift)) / alphaNumerator;
-            destRgba = channelR |
-                (channelG << BackendConfig.Pixel.GreenShift) |
-                (channelB << BackendConfig.Pixel.BlueShift) |
-                (outAlpha << BackendConfig.Pixel.AlphaShift);
+            RgbaCompositor.BlendPixel(ref destRgba, srcRgba);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void BlendColor(ref uint destRgba, uint srcRgba, byte opacity)
         {
-            if (opacity == BackendConfig.Pixel.TransparentAlpha) return;
-            if (opacity != BackendConfig.Pixel.OpaqueAlpha)
-            {
-                const uint fullAlpha = BackendConfig.Pixel.OpaqueAlpha;
-                uint halfAlpha = fullAlpha >> BackendConfig.Math.SingleBitShift;
-                uint srcAlpha = srcRgba >> BackendConfig.Pixel.AlphaShift;
-                uint adjustedAlpha = ((srcAlpha * opacity) + halfAlpha) / fullAlpha;
-                srcRgba = (srcRgba & BackendConfig.Pixel.RgbMask) |
-                    (adjustedAlpha << BackendConfig.Pixel.AlphaShift);
-            }
-            BlendColor(ref destRgba, srcRgba);
+            RgbaCompositor.BlendPixel(ref destRgba, srcRgba, opacity);
         }
 
         // PERFORMANCE: Bulk Layer Blending
@@ -131,19 +71,7 @@ namespace EFYVBackend.Core.Memory
             byte opacity = (byte)(clampedOpacity * BackendConfig.Pixel.OpaqueAlpha + BackendConfig.Math.ColorHalf);
             if (opacity == BackendConfig.Pixel.TransparentAlpha) return;
 
-            uint* currentDest = destArray;
-            uint* currentSrc = srcArray;
-            
-            for (int i = 0; i < totalPixels; i++)
-            {
-                byte srcA = (byte)(*currentSrc >> BackendConfig.Pixel.AlphaShift);
-                if (srcA > transparentAlphaThreshold) 
-                {
-                    BlendColor(ref *currentDest, *currentSrc, opacity);
-                }
-                currentDest++;
-                currentSrc++;
-            }
+            RuntimeMediaKernel.BlendRgbaBatch(destArray, srcArray, totalPixels, opacity, (byte)transparentAlphaThreshold);
         }
 
         // PERFORMANCE AUDIT: Unsafe 2D-to-1D Memory Access

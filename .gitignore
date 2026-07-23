@@ -1,6 +1,7 @@
 # .NET verification output
 **/bin/
 **/obj/
+**/BuildOutput~/
 **/TestResults/
 
 # Python caches

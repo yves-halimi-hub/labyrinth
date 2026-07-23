@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\EFYV.Runtime.Media\EFYV.Runtime.Media.csproj" />
+    <ProjectReference Include="..\..\EFYV-labybackend\Core\EFYVBackend.Core.csproj" />
+  </ItemGroup>
+</Project>

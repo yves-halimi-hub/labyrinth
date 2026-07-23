@@ -9,7 +9,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="..\..\EFYV-labybackend\Core\**\*.cs" LinkBase="Backend" />
+    <Compile Include="..\..\Shared\EFYV.Runtime.Media\**\*.cs" Exclude="..\..\Shared\EFYV.Runtime.Media\bin\**;..\..\Shared\EFYV.Runtime.Media\obj\**;..\..\Shared\EFYV.Runtime.Media\BuildOutput~\**" LinkBase="EFYV.Runtime.Media" />
+    <Compile Include="..\..\EFYV-labybackend\Core\**\*.cs" Exclude="..\..\EFYV-labybackend\Core\bin\**;..\..\EFYV-labybackend\Core\obj\**;..\..\EFYV-labybackend\Core\BuildOutput~\**" LinkBase="Backend" />
     <Compile Include="..\Assets\Scripts\**\*.cs" LinkBase="Game" />
     <Compile Include="*.cs" />
   </ItemGroup>

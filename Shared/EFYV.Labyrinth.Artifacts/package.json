@@ -1,0 +1,11 @@
+{
+  "name": "com.efyv.labyrinth.artifacts",
+  "version": "1.0.0",
+  "displayName": "EFYV Labyrinth Artifacts",
+  "description": "Labyrinth-owned Maker snapshot validation and canonical Unity artifact bundling.",
+  "unity": "6000.6",
+  "dependencies": {
+    "com.efyv.runtime.media": "1.0.0",
+    "com.efyv.labybackend": "0.1.0"
+  }
+}

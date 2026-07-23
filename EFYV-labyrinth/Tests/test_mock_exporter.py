@@ -103,13 +103,17 @@ class MockExporterTests(unittest.TestCase):
             "bad:name", "bad*name", "bad?name", "bad\x00name", "bad\nname",
         )
         with tempfile.TemporaryDirectory(prefix="efyv-mock-attacks-") as root:
-            parent_before = set(pathlib.Path(root).parent.iterdir())
+            parent = pathlib.Path(root).parent
             for name in invalid_names:
                 with self.subTest(name=name):
                     with self.assertRaises(ValueError):
                         EXPORTER.mock_pixel_app_export(root, name)
                     self.assertEqual([], list(pathlib.Path(root).iterdir()))
-            self.assertEqual(parent_before, set(pathlib.Path(root).parent.iterdir()))
+            # Assert the two traversal payloads did not escape. Do not compare the
+            # entire shared system temp directory: unrelated processes legitimately
+            # create and remove entries there while this test runs.
+            self.assertFalse((parent / "escape_Down.png").exists())
+            self.assertFalse((parent / "escape_Down.efyvlaby").exists())
 
 
 if __name__ == "__main__":

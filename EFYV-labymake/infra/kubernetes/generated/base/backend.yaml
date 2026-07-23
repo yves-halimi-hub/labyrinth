@@ -34,7 +34,7 @@ spec:
         app.kubernetes.io/name: backend
         app.kubernetes.io/component: api
       annotations:
-        efyv.io/protobuf-descriptors-sha256: 9044e3d2efb4f451c05cb35c6404a2b74efe7f5217c3ae1fbc96843ae7234f55
+        efyv.io/protobuf-descriptors-sha256: 0c92911703c7e57c47cf0521cab9e019092ea78e123f1c23496413290b99bca6
     spec:
       containers:
       - name: backend
@@ -162,7 +162,7 @@ spec:
         - name: EFYV_PLAN_PATH
           value: /etc/efyv/platform-plan.json
         - name: EFYV_PLAN_SHA256
-          value: b321bc9fdd27881549deea461349aae875209a509641dfa60f6bbcbb33f780d5
+          value: efe324f30c06562370aa18de34fcf0f9409fc4bfbf138f76980f166aa9587796
         - name: EFYV_PROTO_DESCRIPTOR_ROOT
           value: /etc/efyv/protobuf-descriptors
         livenessProbe:

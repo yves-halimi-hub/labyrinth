@@ -1,0 +1,12 @@
+.git
+.github
+**/bin
+**/obj
+**/BuildOutput~
+**/Library
+**/Logs
+**/Temp
+**/UserSettings
+EFYV-labyrinth/Assets
+EFYV-labyrinth/Packages
+EFYV-labyrinth/ProjectSettings

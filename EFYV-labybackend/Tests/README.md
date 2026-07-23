@@ -7,6 +7,11 @@ console project links `../Core/**/*.cs` directly, enables unsafe code, runs a fi
 set of deterministic groups, prints each result, and exits nonzero on any failure.
 Nothing in this directory is referenced by the game or editor runtime.
 
+`CompatibilityGoldenTests.cs` freezes the pre-consolidation schema, save, RNG, RGBA, CRC, PNG,
+and metadata vectors. It also compares managed and native runtime-kernel behavior across randomized
+and edge vectors when the native library is present. Set `EFYV_REQUIRE_NATIVE_KERNEL=1` to require
+that path, and `EFYV_TEST_FILTER` to run one named group in a focused native CI lane.
+
 ## Files
 
 - [EFYVBackend.Verification.csproj](EFYVBackend.Verification.csproj): .NET 8

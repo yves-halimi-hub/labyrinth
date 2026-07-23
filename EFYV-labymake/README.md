@@ -7,6 +7,11 @@ generic `@efyv/maker` studio and the core platform services. The only node-owned
 narrow [`labymake-engine`](services/labymake-engine/) gRPC service for bounded validation and
 deterministic Unity artifact export.
 
+Snapshots are parsed once by the shared Labyrinth artifact package. The engine offers the current
+bounded unary calls plus a v2 chunked export protocol with content-addressed artifact references;
+the app remains on unary export until EFYV Platform gains generic streaming custom-service and
+blob-backed Maker storage support.
+
 The Unity game and `EFYV-labybackend` deliberately live outside this node root. They consume exported
 artifacts and are not packaged into the Kubernetes node.
 

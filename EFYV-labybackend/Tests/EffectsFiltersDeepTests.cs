@@ -4,6 +4,7 @@ using System.IO;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using EFYV.Runtime.Media;
 using EFYVBackend.Core.Export;
 using EFYVBackend.Core.IO;
 using EFYVBackend.Core.Memory;
@@ -696,9 +697,8 @@ namespace EFYVBackend.Verification
             AssertEqual(2, height);
             AssertSequenceEqual(pixels, decoded);
 
-            // Structural pin for the consolidation itself: neither codec type
-            // declares a private CRC table field anymore - FastCrc32 owns the
-            // ONE table in the backend.
+            // Structural pin for the consolidation itself: neither backend codec
+            // facade declares a private CRC table. EFYV.Runtime.Media owns it.
             Type encoder = typeof(FastPngEncoder);
             Type decoder = typeof(FastPngDecoder);
             foreach (Type codec in new[] { encoder, decoder })
@@ -709,7 +709,7 @@ namespace EFYVBackend.Verification
                     Assert(field.FieldType != typeof(uint[]));
                 }
             }
-            FieldInfo sharedTable = typeof(FastCrc32).GetField(
+            FieldInfo sharedTable = typeof(Crc32).GetField(
                 "Table", BindingFlags.NonPublic | BindingFlags.Static);
             Assert(sharedTable != null && sharedTable.FieldType == typeof(uint[]));
         }

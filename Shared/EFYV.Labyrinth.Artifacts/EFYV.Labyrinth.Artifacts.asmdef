@@ -1,0 +1,17 @@
+{
+  "name": "EFYV.Labyrinth.Artifacts",
+  "rootNamespace": "EFYV.Labyrinth.Artifacts",
+  "references": [
+    "EFYV.Runtime.Media",
+    "EFYVBackend.Core"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": true,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": true
+}

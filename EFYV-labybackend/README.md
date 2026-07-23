@@ -7,8 +7,9 @@ toolchain. It defines the data contract used by the LabyMake authoring applicati
 and the Labyrinth Unity game, plus allocation-conscious collections, pixel
 operations, export/import, persistence, math, and deterministic verification.
 
-This component is source-first: there is no root library project. The local and
-sibling verification projects compile `Core/**/*.cs` directly, and the Unity
+This component is source-first. `Core/EFYVBackend.Core.csproj` provides the plain .NET
+reference used by the artifact service; sibling verification projects still compile
+`Core/**/*.cs` directly, and the Unity
 game consumes `Core` as a local UPM package (`com.efyv.labybackend`, see
 [Core/README.md](Core/README.md)) compiled into the `EFYVBackend.Core`
 assembly. Production integrations must preserve the `EFYVBackend.Core.*`
@@ -31,6 +32,7 @@ namespaces, unsafe-code setting, schema offsets, and serialized field names.
 
 - [Core](Core/README.md): production source organized by responsibility.
 - [Tests](Tests/README.md): dependency-free outside-in verification executable.
+- [Benchmarks](Benchmarks/README.md): warmed throughput and allocation harness for media and export paths.
 - [Central configuration](Core/Data/EFYV-LabyrinthConfig.cs): shared constants and
   designer/game/backend registration data.
 - [Schema definitions](Core/Data/FastSchemas.cs): fixed-layout storage contract.
@@ -43,6 +45,7 @@ From this directory:
 dotnet build Tests\EFYVBackend.Verification.csproj -c Debug
 dotnet run --project Tests\EFYVBackend.Verification.csproj -c Debug
 dotnet run --project Tests\EFYVBackend.Verification.csproj -c Release
+dotnet run --project Benchmarks\EFYVBackend.Benchmarks.csproj -c Release -- --verify
 ```
 
 The test project links every production source file, so either build compiles the

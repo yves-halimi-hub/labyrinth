@@ -1,8 +1,16 @@
-schema_version: 1
+schema_version: 2
 name: labymake-engine
 protocol: grpc
 port: 50051
 build: build.sh
+build_context:
+  root: repository
+  dockerfile: EFYV-labymake/services/labymake-engine/Dockerfile
+  include:
+    - EFYV-labymake/services/labymake-engine
+    - EFYV-labybackend/Core
+    - Shared/EFYV.Labyrinth.Artifacts
+    - Shared/EFYV.Runtime.Media
 health_service: grpc.health.v1.Health
 exports:
   - efyv.labymake.v1.LabyMakeEngine/Validate

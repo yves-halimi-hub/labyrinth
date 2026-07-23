@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package efyv.labymake.v2;
+
+service LabyMakeArtifactTransfer {
+  rpc GetLimits(LimitsRequest) returns (LimitsReply);
+  rpc Export(stream ExportRequest) returns (stream ExportReply);
+}
+
+message LimitsRequest {}
+
+message LimitsReply {
+  uint32 contract_version = 1;
+  uint64 max_snapshot_bytes = 2;
+  uint64 max_bundle_bytes = 3;
+  uint32 stream_chunk_bytes = 4;
+  uint32 max_concurrent_exports = 5;
+  uint32 max_queued_exports = 6;
+  bool artifact_references = 7;
+}
+
+message ExportStart {
+  uint32 contract_version = 1;
+  uint64 total_size = 2;
+}
+
+message ExportRequest {
+  oneof payload {
+    ExportStart start = 1;
+    bytes chunk = 2;
+  }
+}
+
+message ExportHeader {
+  string filename = 1;
+  string content_type = 2;
+  uint64 total_size = 3;
+  string artifact_reference = 4;
+  string sha256 = 5;
+}
+
+message ExportReply {
+  oneof payload {
+    ExportHeader header = 1;
+    bytes chunk = 2;
+  }
+}

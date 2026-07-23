@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Shared/EFYV.Runtime.Media/EFYV.Runtime.Media.csproj" />
+    <ProjectReference Include="../../Shared/EFYV.Labyrinth.Artifacts/EFYV.Labyrinth.Artifacts.csproj" />
+    <ProjectReference Include="../Core/EFYVBackend.Core.csproj" />
+  </ItemGroup>
+</Project>

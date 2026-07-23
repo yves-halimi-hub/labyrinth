@@ -8,7 +8,7 @@ services:
       BACKEND_BASE_URL: "http://backend:8000"
       NODE_ENV: "${NODE_ENV:-production}"
       EFYV_PLAN_PATH: /etc/efyv/platform-plan.json
-      EFYV_PLAN_SHA256: b321bc9fdd27881549deea461349aae875209a509641dfa60f6bbcbb33f780d5
+      EFYV_PLAN_SHA256: efe324f30c06562370aa18de34fcf0f9409fc4bfbf138f76980f166aa9587796
     depends_on:
       backend:
         condition: service_healthy
@@ -46,7 +46,7 @@ services:
       SMTP_USER: "${SMTP_USER:-}"
       SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
       EFYV_PLAN_PATH: /etc/efyv/platform-plan.json
-      EFYV_PLAN_SHA256: b321bc9fdd27881549deea461349aae875209a509641dfa60f6bbcbb33f780d5
+      EFYV_PLAN_SHA256: efe324f30c06562370aa18de34fcf0f9409fc4bfbf138f76980f166aa9587796
       EFYV_PROTO_DESCRIPTOR_ROOT: /etc/efyv/protobuf-descriptors
     depends_on:
       postgres:
@@ -84,7 +84,7 @@ services:
     image: "efyv/compute:${EFYV_VERSION:-0.1.0}"
     environment:
       EFYV_PLAN_PATH: /etc/efyv/platform-plan.json
-      EFYV_PLAN_SHA256: b321bc9fdd27881549deea461349aae875209a509641dfa60f6bbcbb33f780d5
+      EFYV_PLAN_SHA256: efe324f30c06562370aa18de34fcf0f9409fc4bfbf138f76980f166aa9587796
     volumes:
     - "../../.efyv/build/platform-plan.json:/etc/efyv/platform-plan.json:ro"
     healthcheck:
@@ -97,6 +97,14 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    user: "10001:10001"
+    security_opt:
+    - "no-new-privileges:true"
+    cap_drop:
+    - ALL
+    read_only: true
+    tmpfs:
+    - "/tmp:rw,nosuid,nodev"
     restart: "${RESTART_POLICY:-unless-stopped}"
   postgres:
     image: "efyv/postgres:${EFYV_VERSION:-0.1.0}"
@@ -133,8 +141,8 @@ services:
     restart: "${RESTART_POLICY:-unless-stopped}"
   labymake-engine:
     build:
-      context: ../../services/labymake-engine
-      dockerfile: Dockerfile
+      context: ../../..
+      dockerfile: EFYV-labymake/services/labymake-engine/Dockerfile
     image: "efyv-labymake-labymake-engine:${EFYV_TAG:-local}"
     environment:
       EFYV_GRPC_PORT: "50051"

@@ -6,11 +6,19 @@
       "source": "embedded",
       "dependencies": {}
     },
+    "com.efyv.runtime.media": {
+      "version": "file:../../Shared/EFYV.Runtime.Media",
+      "depth": 0,
+      "source": "local",
+      "dependencies": {}
+    },
     "com.efyv.labybackend": {
       "version": "file:../../EFYV-labybackend/Core",
       "depth": 0,
       "source": "local",
-      "dependencies": {}
+      "dependencies": {
+        "com.efyv.runtime.media": "1.0.0"
+      }
     },
     "com.unity.2d.sprite": {
       "version": "1.0.0",

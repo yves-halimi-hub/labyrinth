@@ -10,17 +10,17 @@ Unity-facing runtime and editor integration for EFYV Labyrinth. This repository 
 | --- | --- |
 | [Assets](Assets/README.md) | Unity-owned runtime and editor scripts, plus the playable scene |
 | [Packages](Packages/) | Unity package manifest, local backend package reference, and the BCL-compat embedded package |
-| [ProjectSettings](ProjectSettings/) | Pinned editor version (6000.3.20f1) and project configuration |
+| [ProjectSettings](ProjectSettings/) | Pinned editor version (6000.6.0b4) and project configuration |
 | [PixelArtApp](PixelArtApp/README.md) | Standalone mock exporter for the art contract |
 | [Tests](Tests/README.md) | Headless game/editor verification and Unity API stubs |
 | [Repository automation](../.github/README.md) | Tagged build and Steam deployment automation |
 
 ## Opening the project in Unity
 
-This directory is a complete Unity project targeting **Unity 6.3 LTS (6000.3.20f1)**.
+This directory is a complete Unity project targeting **Unity 6.6 beta (6000.6.0b4)**.
 
-1. Install Unity `6000.3.20f1` through Unity Hub (no extra modules required to open it).
-2. In Unity Hub choose *Add project from disk* and select this `EFYV-labyrinth` directory (the repo checkout must keep its siblings: the backend is consumed as a local package via `Packages/manifest.json` -> `file:../../EFYV-labybackend/Core`).
+1. Install Unity `6000.6.0b4` through Unity Hub (no extra modules required to open it).
+2. In Unity Hub choose *Add project from disk* and select this `EFYV-labyrinth` directory (the repo checkout must keep its siblings: media and backend are consumed as local packages through `Packages/manifest.json`).
 3. Open `Assets/Scenes/Labyrinth.unity` and press Play. `GameBootstrap` generates deterministic placeholder sprites, a tile palette, and a schema-backed stats block for the inactive `EnemyTemplate`, so the scene is playable without any binary art: WASD/arrows move the player, `SpawnManager` clones the template through `PoolManager`, and enemies chase and damage the player.
 
 Layout notes:

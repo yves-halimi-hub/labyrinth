@@ -16,6 +16,17 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Checkout pinned EFYV runtime kernel
+        uses: actions/checkout@v4
+        with:
+          repository: yves-halimi-hub/EFYV-runtime-kernel
+          ref: 16260b07de77e15d09f373d5833a5e7243fe14eb
+          path: .deps/EFYV-runtime-kernel
+          ssh-key: ${{ secrets.EFYV_RUNTIME_KERNEL_DEPLOY_KEY }}
+          persist-credentials: false
 
       - name: Setup .NET SDKs
         uses: actions/setup-dotnet@v4
@@ -30,6 +41,22 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+
+      - name: Build pinned shared runtime kernel (Release)
+        shell: pwsh
+        run: |
+          cmake `
+            -S .deps/EFYV-runtime-kernel `
+            -B .deps/EFYV-runtime-kernel/build/msvc `
+            -A x64 `
+            -DBUILD_SHARED_LIBS=ON `
+            -DEFYV_RUNTIME_BUILD_TESTS=OFF `
+            -DEFYV_RUNTIME_BUILD_BENCHMARKS=OFF
+          cmake --build .deps/EFYV-runtime-kernel/build/msvc --config Release --parallel
+
+          $kernelDll = Resolve-Path ".deps/EFYV-runtime-kernel/build/msvc/Release/efyv_runtime_kernel.dll"
+          Split-Path -Parent $kernelDll | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "EFYV_REQUIRE_NATIVE_KERNEL=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Backend verification (net8.0)
         run: dotnet run --project EFYV-labybackend/Tests/EFYVBackend.Verification.csproj -c Release
