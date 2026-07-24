@@ -8,7 +8,7 @@ services:
       BACKEND_BASE_URL: "http://backend:8000"
       NODE_ENV: "${NODE_ENV:-production}"
       EFYV_PLAN_PATH: /etc/efyv/platform-plan.json
-      EFYV_PLAN_SHA256: efe324f30c06562370aa18de34fcf0f9409fc4bfbf138f76980f166aa9587796
+      EFYV_PLAN_SHA256: f372bfbe92c63f4c69d6654cff24dadb6d7e821ba47bf3af6df06c5b1173963e
     depends_on:
       backend:
         condition: service_healthy
@@ -45,8 +45,9 @@ services:
       SMTP_PORT: "${SMTP_PORT:-587}"
       SMTP_USER: "${SMTP_USER:-}"
       SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      COMPUTE_INTERNAL_TOKEN: "${COMPUTE_INTERNAL_TOKEN}"
       EFYV_PLAN_PATH: /etc/efyv/platform-plan.json
-      EFYV_PLAN_SHA256: efe324f30c06562370aa18de34fcf0f9409fc4bfbf138f76980f166aa9587796
+      EFYV_PLAN_SHA256: f372bfbe92c63f4c69d6654cff24dadb6d7e821ba47bf3af6df06c5b1173963e
       EFYV_PROTO_DESCRIPTOR_ROOT: /etc/efyv/protobuf-descriptors
     depends_on:
       postgres:
@@ -83,8 +84,9 @@ services:
   compute:
     image: "efyv/compute:${EFYV_VERSION:-0.1.0}"
     environment:
+      COMPUTE_INTERNAL_TOKEN: "${COMPUTE_INTERNAL_TOKEN}"
       EFYV_PLAN_PATH: /etc/efyv/platform-plan.json
-      EFYV_PLAN_SHA256: efe324f30c06562370aa18de34fcf0f9409fc4bfbf138f76980f166aa9587796
+      EFYV_PLAN_SHA256: f372bfbe92c63f4c69d6654cff24dadb6d7e821ba47bf3af6df06c5b1173963e
     volumes:
     - "../../.efyv/build/platform-plan.json:/etc/efyv/platform-plan.json:ro"
     healthcheck:

@@ -7,7 +7,7 @@
 [`ci.yml`](ci.yml) runs on every push and pull request:
 
 1. Check out the monorepo.
-2. Check out the private [`yves-halimi-hub/EFYV-runtime-kernel`](https://github.com/yves-halimi-hub/EFYV-runtime-kernel) dependency at immutable commit `16260b07de77e15d09f373d5833a5e7243fe14eb` into `.deps/EFYV-runtime-kernel`, without persisting Git credentials.
+2. Check out the private [`yves-halimi-hub/EFYV-runtime-kernel`](https://github.com/yves-halimi-hub/EFYV-runtime-kernel) dependency at immutable commit `de2fd094ff8365bab7444c751dac654694f92ced` into `.deps/EFYV-runtime-kernel`, without persisting Git credentials.
 3. Install the .NET 8 and .NET 10 SDKs (the backend and LabyMake engine target `net8.0`; the game verification project targets `net10.0`) plus Python 3.
 4. Build the pinned kernel as a Release x64 shared library with the runner's hosted MSVC generator, add the directory containing `efyv_runtime_kernel.dll` to `GITHUB_PATH`, and set `EFYV_REQUIRE_NATIVE_KERNEL=1`. The full backend verification therefore fails if the native ABI cannot load and compares its RGBA/CRC behavior against the managed implementation when it can.
 5. Run the backend verification project, build the stateless `EFYV-labymake/services/labymake-engine` gRPC service,

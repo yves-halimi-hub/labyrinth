@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yves-halimi-hub/EFYV-runtime-kernel
-          ref: 16260b07de77e15d09f373d5833a5e7243fe14eb
+          ref: de2fd094ff8365bab7444c751dac654694f92ced
           path: .deps/EFYV-runtime-kernel
           ssh-key: ${{ secrets.EFYV_RUNTIME_KERNEL_DEPLOY_KEY }}
           persist-credentials: false

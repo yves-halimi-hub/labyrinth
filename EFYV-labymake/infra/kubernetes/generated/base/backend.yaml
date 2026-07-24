@@ -159,10 +159,15 @@ spec:
             secretKeyRef:
               name: efyv-labymake-secrets
               key: SMTP_PASSWORD
+        - name: COMPUTE_INTERNAL_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: efyv-labymake-secrets
+              key: COMPUTE_INTERNAL_TOKEN
         - name: EFYV_PLAN_PATH
           value: /etc/efyv/platform-plan.json
         - name: EFYV_PLAN_SHA256
-          value: efe324f30c06562370aa18de34fcf0f9409fc4bfbf138f76980f166aa9587796
+          value: f372bfbe92c63f4c69d6654cff24dadb6d7e821ba47bf3af6df06c5b1173963e
         - name: EFYV_PROTO_DESCRIPTOR_ROOT
           value: /etc/efyv/protobuf-descriptors
         livenessProbe:
