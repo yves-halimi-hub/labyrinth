@@ -11,7 +11,7 @@ Concrete world interactions:
 | [`CoinProp.cs`](CoinProp.cs) | Clamps grade, calculates value, and awards persistent/session coins |
 | [`DoorProp.cs`](DoorProp.cs) | Hashes a target map ID and requests a map switch |
 | [`GenericProp.cs`](GenericProp.cs) | Neutral prop archetype instantiated by the debug spawn factory for any imported `GameAssetData`; a bare `NonInteractableProp` that shows the imported sprite/animation and takes blocking from the asset's `IsWalkable` slot |
-| [`SarcophageProp.cs`](SarcophageProp.cs) | Selects teleport, ambush, trap, or curse outcomes |
+| [`SarcophageProp.cs`](SarcophageProp.cs) | Selects teleport, ambush, trap, or curse outcomes; an ambush evaluates the full circular spawn layout in one native paired-sin/cos batch |
 | [`TreeProp.cs`](TreeProp.cs) | Passive nonblocking animated scenery |
 | [`XPGem.cs`](XPGem.cs) | Awards authored experience and returns to the pool |
 

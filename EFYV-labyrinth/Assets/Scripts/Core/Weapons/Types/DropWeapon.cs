@@ -1,6 +1,5 @@
+using System;
 using UnityEngine;
-using EFYV.Core.Entities;
-using EFYV.Core.Utils;
 using GameConfig = EFYVBackend.Core.Data.EFYVLabyrinthConfig.Game;
 
 namespace EFYV.Core.Weapons.Types
@@ -9,6 +8,7 @@ namespace EFYV.Core.Weapons.Types
     public abstract class DropWeapon : Weapon
     {
         public GameObject bombVisualPrefab;
+        private Vector3[] dropPoints = Array.Empty<Vector3>();
         
         public float damageRadius
         {
@@ -43,7 +43,8 @@ namespace EFYV.Core.Weapons.Types
             float fovHeight = mainCamera.orthographicSize;
             float fovWidth = fovHeight * mainCamera.aspect;
             Vector3 camPos = mainCamera.transform.position;
-            float sqrDamageRadius = damageRadius * damageRadius;
+            if (dropCount <= GameConfig.Runtime.EmptyCollectionCount) return;
+            EnsureDropCapacity(dropCount);
 
             for (int d = 0; d < dropCount; d++)
             {
@@ -51,6 +52,7 @@ namespace EFYV.Core.Weapons.Types
                 float randX = EFYVBackend.Core.Math.FastRandom.Range(camPos.x - fovWidth, camPos.x + fovWidth);
                 float randY = EFYVBackend.Core.Math.FastRandom.Range(camPos.y - fovHeight, camPos.y + fovHeight);
                 Vector3 dropPoint = new Vector3(randX, randY, GameConfig.Weapons.DefaultZOffset);
+                dropPoints[d] = dropPoint;
 
                 if (bombVisualPrefab != null)
                 {
@@ -60,10 +62,23 @@ namespace EFYV.Core.Weapons.Types
                         Managers.PoolManager.Instance.DespawnGameObject(vfx, Managers.PoolManager.GetPoolKey(bombVisualPrefab), GameConfig.Weapons.Drop.VfxLifetime);
                     }
                 }
-
-                // Faction-aware radius damage around each drop point.
-                DamageTargetsInRadius(dropPoint, sqrDamageRadius, BaseDamage);
             }
+
+            DamageTargetsInRadiusBatch(
+                dropPoints.AsSpan(0, dropCount),
+                damageRadius,
+                BaseDamage);
+        }
+
+        private void EnsureDropCapacity(int required)
+        {
+            if (dropPoints.Length >= required) return;
+            int capacity = 4;
+            while (capacity < required)
+            {
+                capacity = checked(capacity * 2);
+            }
+            Array.Resize(ref dropPoints, capacity);
         }
     }
 }

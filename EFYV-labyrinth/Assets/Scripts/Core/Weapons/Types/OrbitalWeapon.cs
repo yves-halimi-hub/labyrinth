@@ -1,7 +1,6 @@
+using System;
 using UnityEngine;
-using EFYV.Core.Entities;
-using EFYVBackend.Core.Math;
-using EFYV.Core.Utils;
+using EFYV.Core.Compute;
 using GameConfig = EFYVBackend.Core.Data.EFYVLabyrinthConfig.Game;
 
 namespace EFYV.Core.Weapons.Types
@@ -10,6 +9,11 @@ namespace EFYV.Core.Weapons.Types
     public abstract class OrbitalWeapon : Weapon
     {
         public Transform[] visualSprites;
+
+        private float[] angleRadians = Array.Empty<float>();
+        private float[] angleSines = Array.Empty<float>();
+        private float[] angleCosines = Array.Empty<float>();
+        private Vector3[] projectilePositions = Array.Empty<Vector3>();
         
         public float orbitRadius 
         { 
@@ -67,32 +71,62 @@ namespace EFYV.Core.Weapons.Types
 
             Vector3 center = transform.position;
             float angleStep = GameConfig.Weapons.Orbital.FullCircleDegrees / projectileCount;
-
-            float sqrDamageRadius = damageRadius * damageRadius;
             float frameDamage = BaseDamage * TickDeltaTime;
+            EnsureProjectileCapacity(projectileCount);
 
             for (int p = 0; p < projectileCount; p++)
             {
                 float angle = currentAngle + (p * angleStep);
+                angleRadians[p] = RuntimeGameplayCompute.NormalizeRadians(
+                    angle * EFYVBackend.Core.Data.EFYVLabyrinthConfig.Backend.Math.Deg2Rad);
+            }
 
-                // PERFORMANCE: C-Optimized Taylor Series FastCos/FastSin from the backend
-                FastMath.FastSinCosTaylor(
-                    angle * EFYVBackend.Core.Data.EFYVLabyrinthConfig.Backend.Math.Deg2Rad,
-                    out float sin,
-                    out float cos);
+            // All orbit angles share one range-reduced native sin/cos batch.
+            RuntimeGameplayCompute.SinCosRadians(
+                angleRadians.AsSpan(0, projectileCount),
+                angleSines.AsSpan(0, projectileCount),
+                angleCosines.AsSpan(0, projectileCount));
+
+            for (int p = 0; p < projectileCount; p++)
+            {
+                float sin = angleSines[p];
+                float cos = angleCosines[p];
                 float x = cos * orbitRadius;
                 float y = sin * orbitRadius;
 
                 Vector3 projPos = center + new Vector3(x, y, GameConfig.Weapons.DefaultZOffset);
+                projectilePositions[p] = projPos;
 
                 if (visualSprites != null && p < visualSprites.Length && visualSprites[p] != null)
                 {
                     visualSprites[p].position = projPos;
                 }
-
-                // Faction-aware contact damage around this specific orbital projectile
-                DamageTargetsInRadius(projPos, sqrDamageRadius, frameDamage);
             }
+
+            // One spatial batch for all projectiles; consuming query groups in
+            // order preserves stacked contact damage.
+            DamageTargetsInRadiusBatch(
+                projectilePositions.AsSpan(0, projectileCount),
+                damageRadius,
+                frameDamage);
+        }
+
+        private void EnsureProjectileCapacity(int required)
+        {
+            if (angleRadians.Length >= required)
+            {
+                return;
+            }
+
+            int capacity = 4;
+            while (capacity < required)
+            {
+                capacity = checked(capacity * 2);
+            }
+            Array.Resize(ref angleRadians, capacity);
+            Array.Resize(ref angleSines, capacity);
+            Array.Resize(ref angleCosines, capacity);
+            Array.Resize(ref projectilePositions, capacity);
         }
     }
 }

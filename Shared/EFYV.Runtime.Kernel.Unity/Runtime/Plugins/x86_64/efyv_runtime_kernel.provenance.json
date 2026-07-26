@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "artifact": "efyv_runtime_kernel.dll",
+  "packageVersion": "0.2.0",
+  "status": "verified-build",
+  "generatedAtUtc": "2026-07-26T01:06:07.3451935Z",
+  "runtimeCommit": "639b4b9bf3d262a01751471dabb2ad8ebe6ed33e",
+  "runtimeWorkingTreeDirty": false,
+  "runtimeBuildInputTreeSha256": "b121951d22863fcc38f17c4fa95e70bbe45d4bb4959fbb117a48b10054283c79",
+  "officialBindingSourceSha256": "923091e2fd3e0235f4a075ab41291b668d115c75b01404b24778d95290d54208",
+  "managedAssemblyVersion": "0.2.0.0",
+  "nativeArtifactSha256": "77363094a6748f6f7718865351f8974f661bedf3ee6967e852238c53567c5b67",
+  "nativeToolchain": "Docker/MinGW",
+  "containerImage": "gcc@sha256:5e927c284bf55a7dc796262e311a0703344f62f41f5621eb56843111b1d37e15",
+  "cmake": "cmake version 3.25.1",
+  "cxxCompiler": "x86_64-w64-mingw32-g++-posix (GCC) 12-posix",
+  "buildConfiguration": "Release",
+  "sharedLibrary": true
+}

@@ -478,11 +478,15 @@ internal static partial class Program
             {
                 float frameWidth = atlas.FrameWidth / Config.Shared.PixelsPerUnit;
                 float frameHeight = atlas.FrameHeight / Config.Shared.PixelsPerUnit;
-                Equal(x + (width * pivot) - (frameWidth * pivot), center.x);
-                Equal((frameHeight * pivot) - y - (height * pivot), center.y);
+                float localX = x / Config.Shared.PixelsPerUnit;
+                float localY = y / Config.Shared.PixelsPerUnit;
+                float localWidth = width / Config.Shared.PixelsPerUnit;
+                float localHeight = height / Config.Shared.PixelsPerUnit;
+                Equal(localX + (localWidth * pivot) - (frameWidth * pivot), center.x);
+                Equal((frameHeight * pivot) - localY - (localHeight * pivot), center.y);
                 Equal(0f, center.z);
-                Equal(width, size.x);
-                Equal(height, size.y);
+                Equal(localWidth, size.x);
+                Equal(localHeight, size.y);
                 Equal(0f, size.z);
             }
             else

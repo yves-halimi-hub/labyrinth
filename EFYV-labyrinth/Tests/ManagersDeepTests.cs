@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using EFYV.Core.Compute;
 using EFYV.Core.Data;
 using EFYV.Core.Entities;
 using EFYV.Core.Entities.Environment;
@@ -922,7 +923,10 @@ internal static partial class Program
             {
                 int prefabIndex = model.RangeInt(0, 2);
                 float radians = model.RangeFloat(0f, 6.28318531f) - 3.14159265f;
-                ManagersRefSinCos(radians, out float sin, out float cos);
+                float normalizedRadians =
+                    RuntimeGameplayCompute.NormalizeRadians(radians);
+                float sin = MathF.Sin(normalizedRadians);
+                float cos = MathF.Cos(normalizedRadians);
                 float positionX = 100f + (cos * 12.5f);
                 float positionY = -50f + (sin * 12.5f);
                 expected.Add(prefabIndex == 0 ? keyA : keyB);
@@ -937,8 +941,8 @@ internal static partial class Program
             Equal(expectedPositions.Count, Enemy.ActiveEnemies.Count);
             for (int i = 0; i < expectedPositions.Count; i++)
             {
-                Near(expectedPositions[i].x, Enemy.ActiveEnemies[i].entityTransform.position.x, 0f);
-                Near(expectedPositions[i].y, Enemy.ActiveEnemies[i].entityTransform.position.y, 0f);
+                Near(expectedPositions[i].x, Enemy.ActiveEnemies[i].entityTransform.position.x, 2e-5f);
+                Near(expectedPositions[i].y, Enemy.ActiveEnemies[i].entityTransform.position.y, 2e-5f);
                 Near(3f, Enemy.ActiveEnemies[i].entityTransform.position.z, 0f);
             }
         }

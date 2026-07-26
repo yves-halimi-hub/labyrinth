@@ -1,4 +1,5 @@
 using UnityEngine;
+using EFYV.Core.Compute;
 using EFYV.Core.Entities;
 using EFYV.Core.Utils;
 using GameConfig = EFYVBackend.Core.Data.EFYVLabyrinthConfig.Game;
@@ -29,7 +30,10 @@ namespace EFYV.Core.Weapons.Types
 
         public override void Fire()
         {
-            float sqrRange = attackRange * attackRange;
+            float effectiveRange = attackRange < GameConfig.Runtime.UnitIntervalMin
+                ? -attackRange
+                : attackRange;
+            float sqrRange = effectiveRange * effectiveRange;
             Vector3 myPos = transform.position;
             // Time-scaled knockback uses the driving tick's deltaTime, never the
             // global clock, so custom-dt drivers stay in sync with rotation/damage.
@@ -52,20 +56,24 @@ namespace EFYV.Core.Weapons.Types
                 return;
             }
 
-            // PERFORMANCE: O(1) Spatial Hashing or broad-phase array check
-            // For now, doing a squared-distance array iteration
-            var activeEnemies = Enemy.ActiveEnemies;
-            for (int i = activeEnemies.Count - 1; i >= 0; i--)
+            RuntimeGameplayCompute.QueryEnemyRadius(myPos, effectiveRange);
+            int start = RuntimeGameplayCompute.QueryHitStart(GameConfig.Runtime.FirstIndex);
+            for (int hitIndex =
+                    RuntimeGameplayCompute.QueryHitEnd(GameConfig.Runtime.FirstIndex) - 1;
+                hitIndex >= start;
+                hitIndex--)
             {
-                var enemy = activeEnemies[i];
-                if (enemy.entityTransform.position.FastSqrDistance(myPos) <= sqrRange)
+                Enemy enemy = RuntimeGameplayCompute.EnemyAtHit(hitIndex);
+                if (!enemy.IsSpawned)
                 {
-                    Vector3 offset = enemy.entityTransform.position - myPos;
-                    enemy.TakeDamage(BaseDamage);
-                    if (enemy.IsSpawned)
-                    {
-                        enemy.entityTransform.position += offset.normalized * knockbackStep;
-                    }
+                    continue;
+                }
+
+                Vector3 offset = enemy.entityTransform.position - myPos;
+                enemy.TakeDamage(BaseDamage);
+                if (enemy.IsSpawned)
+                {
+                    enemy.entityTransform.position += offset.normalized * knockbackStep;
                 }
             }
         }

@@ -888,15 +888,18 @@ internal static partial class Program
 
     private static void TestHitboxCalculationsAndLiveRefresh()
     {
-        var atlas = new EntityAtlasMetadata { FrameWidth = 32, FrameHeight = 48 };
+        // Golden unit contract: the maker authors both frame and hitbox
+        // coordinates in pixels; the Unity collider/gizmo consumes local units.
+        // A centered 16x8 pixel hurtbox in a 32x16 frame at 16 PPU is a
+        // centered 1x0.5 local-unit box.
+        var atlas = new EntityAtlasMetadata { FrameWidth = 32, FrameHeight = 16 };
         Check(EFYVHitboxGizmo.TryGetLocalBounds(
-            atlas, new Rect(0.25f, 0.5f, 0.75f, 1.25f), out Vector3 center, out Vector3 size));
-        float pivot = Config.Game.Importer.SpritePivotNormalized;
-        Near(0.25f + (0.75f * pivot) - ((32f / Config.Shared.PixelsPerUnit) * pivot), center.x);
-        Near(((48f / Config.Shared.PixelsPerUnit) * pivot) - 0.5f - (1.25f * pivot), center.y);
+            atlas, new Rect(8f, 4f, 16f, 8f), out Vector3 center, out Vector3 size));
+        Near(0f, center.x);
+        Near(0f, center.y);
         Near(0f, center.z);
-        Near(0.75f, size.x);
-        Near(1.25f, size.y);
+        Near(1f, size.x);
+        Near(0.5f, size.y);
 
         float[] badFloats = { float.NaN, float.PositiveInfinity, float.NegativeInfinity };
         foreach (float bad in badFloats)

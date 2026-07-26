@@ -23,12 +23,9 @@ namespace EFYV.Core.Weapons.Types
 
         public override void Fire()
         {
-            // Temporary simple implementation: just damage everything close
-            // A fully optimized version uses grid.GetEntitiesInRadius()
-            float sqrRadius = radius * radius;
-            // Faction-aware: player auras sweep the packed enemy list, enemy-held
-            // auras test only the player singleton.
-            DamageTargetsInRadius(transform.position, sqrRadius, BaseDamage);
+            // One native point-radius query; faction and health mutation remain
+            // in the managed weapon layer.
+            DamageTargetsInRadius(transform.position, radius, BaseDamage);
         }
     }
 }

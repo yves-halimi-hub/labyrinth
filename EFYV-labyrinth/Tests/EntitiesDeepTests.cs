@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using EFYV.Core.Controllers;
+using EFYV.Core.Compute;
 using EFYV.Core.Data;
 using EFYV.Core.Data.Entities;
 using EFYV.Core.Entities;
@@ -1110,7 +1111,8 @@ internal static partial class Program
             Check(Debug.Messages.Contains(string.Format(Config.Game.Map.LogMapManagerSwitchSuccess, expectedMap)));
             Check(!box.IsSpawned);
 
-            // Ambush branch: exact circle-distribution spawn positions via the shared Taylor trig.
+            // Ambush branch: circle-distribution positions via the shared
+            // geometry-grade native trig batch.
             uint ambushSeed = EntitiesFindSeedWhere(roll =>
                 roll > Config.Game.Map.SarcophageTeleportChance && roll <= Config.Game.Map.SarcophageSpawnEnemyChance);
             Enemy.ActiveEnemies.Clear();
@@ -1121,14 +1123,16 @@ internal static partial class Program
             for (int i = 0; i < Enemy.ActiveEnemies.Count; i++)
             {
                 float rad = FastMath.GetCircleDistributionAngleRad(i, Config.Game.Map.SarcophageAmbushCount);
-                FastMath.FastSinCosTaylor(rad, out float sin, out float cos);
+                rad = RuntimeGameplayCompute.NormalizeRadians(rad);
+                float sin = MathF.Sin(rad);
+                float cos = MathF.Cos(rad);
                 Vector3 expectedPosition = new Vector3(-2f, 3f, 0f) + new Vector3(
                     cos * Config.Game.Map.SarcophageAmbushRadius,
                     sin * Config.Game.Map.SarcophageAmbushRadius,
                     Config.Game.EnvironmentData.PlanarZOffset);
                 Check(Enemy.ActiveEnemies[i] is Monster);
-                Near(expectedPosition.x, Enemy.ActiveEnemies[i].entityTransform.position.x, 0f);
-                Near(expectedPosition.y, Enemy.ActiveEnemies[i].entityTransform.position.y, 0f);
+                Near(expectedPosition.x, Enemy.ActiveEnemies[i].entityTransform.position.x, 2e-6f);
+                Near(expectedPosition.y, Enemy.ActiveEnemies[i].entityTransform.position.y, 2e-6f);
                 Near(expectedPosition.z, Enemy.ActiveEnemies[i].entityTransform.position.z, 0f);
             }
             Check(Debug.Messages.Contains(Config.Game.Map.LogSarcophageAmbush));

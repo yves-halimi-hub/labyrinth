@@ -1,4 +1,5 @@
 using UnityEngine;
+using EFYV.Core.Compute;
 using EFYV.Core.Interfaces;
 using EFYV.Core.Data;
 using EFYV.Core.Utils;
@@ -57,12 +58,23 @@ namespace EFYV.Core.Entities
 
         public static void ApplyDamageInRadius(Vector3 center, float squaredRadius, float damage)
         {
-            // Damage can despawn an enemy and mutate the packed list. Descending iteration
-            // keeps swap-removal safe because the swapped tail item was already visited.
-            for (int i = ActiveEnemies.Count - 1; i >= 0; i--)
+            // Retains the public squared-radius contract while routing selection
+            // through the native batch service. Negative/NaN squared distances
+            // matched nothing in the former comparison loop.
+            if (!(squaredRadius >= GameConfig.Runtime.UnitIntervalMin))
             {
-                Enemy enemy = ActiveEnemies[i];
-                if (enemy.entityTransform.position.FastSqrDistance(center) <= squaredRadius)
+                return;
+            }
+
+            RuntimeGameplayCompute.QueryEnemyRadius(center, System.MathF.Sqrt(squaredRadius));
+            int start = RuntimeGameplayCompute.QueryHitStart(GameConfig.Runtime.FirstIndex);
+            for (int hitIndex =
+                    RuntimeGameplayCompute.QueryHitEnd(GameConfig.Runtime.FirstIndex) - 1;
+                hitIndex >= start;
+                hitIndex--)
+            {
+                Enemy enemy = RuntimeGameplayCompute.EnemyAtHit(hitIndex);
+                if (enemy.IsSpawned)
                 {
                     enemy.TakeDamage(damage);
                 }

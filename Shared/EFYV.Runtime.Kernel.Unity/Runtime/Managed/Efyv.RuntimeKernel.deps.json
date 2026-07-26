@@ -1,0 +1,24 @@
+{
+  "runtimeTarget": {
+    "name": ".NETStandard,Version=v2.1/",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETStandard,Version=v2.1": {},
+    ".NETStandard,Version=v2.1/": {
+      "Efyv.RuntimeKernel/0.2.0": {
+        "runtime": {
+          "Efyv.RuntimeKernel.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Efyv.RuntimeKernel/0.2.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

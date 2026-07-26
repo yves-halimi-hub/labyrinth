@@ -1,4 +1,6 @@
+using System;
 using UnityEngine;
+using EFYV.Core.Compute;
 using EFYV.Core.Entities;
 using EFYV.Core.Data;
 using GameConfig = EFYVBackend.Core.Data.EFYVLabyrinthConfig.Game;
@@ -14,6 +16,11 @@ namespace EFYV.Core.Managers
         
         [Tooltip(GameConfig.Spawner.TooltipEnemyPrefabs)]
         public Enemy[] enemyPrefabs; 
+
+        private Enemy[] spawnPrefabBatch = Array.Empty<Enemy>();
+        private float[] spawnAngles = Array.Empty<float>();
+        private float[] spawnSines = Array.Empty<float>();
+        private float[] spawnCosines = Array.Empty<float>();
 
         [Header(GameConfig.Spawner.HeaderSettings)]
         [Tooltip(GameConfig.Spawner.TooltipSpawnRadius)]
@@ -192,10 +199,10 @@ namespace EFYV.Core.Managers
                 while (spawnAccumulator >= GameConfig.Spawner.AccumulatorThreshold &&
                     spawnsThisFrame < GameConfig.Spawner.MaxSpawnsPerFrame)
                 {
-                    SpawnRandomEnemy();
                     spawnAccumulator -= GameConfig.Spawner.AccumulatorThreshold;
                     spawnsThisFrame++;
                 }
+                SpawnRandomEnemies(spawnsThisFrame);
             }
 
             // PERFORMANCE: UPDATE MANAGER PATTERN
@@ -218,25 +225,73 @@ namespace EFYV.Core.Managers
             }
         }
 
-        private void SpawnRandomEnemy()
+        private void SpawnRandomEnemies(int count)
         {
-            if (enemyPrefabs == null || enemyPrefabs.Length == GameConfig.Runtime.EmptyCollectionCount) return;
-
-            // Pick a random enemy from our array
-            Enemy prefabToSpawn = enemyPrefabs[EFYVBackend.Core.Math.FastRandom.Range(GameConfig.Spawner.RandomMinIndex, enemyPrefabs.Length)];
-
-            // Generate a random angle in radians (-PI to PI) for our Taylor series
-            float randomRad = EFYVBackend.Core.Math.FastRandom.Range(GameConfig.Spawner.MinRadians, EFYVBackend.Core.Data.EFYVLabyrinthConfig.Backend.Math.TwoPI) - EFYVBackend.Core.Data.EFYVLabyrinthConfig.Backend.Math.PI;
-            
-            EFYVBackend.Core.Math.FastMath.FastSinCosTaylor(randomRad, out float sin, out float cos);
-            
-            Vector2 offset = new Vector2(cos, sin) * spawnRadius;
-            Vector3 spawnPosition = playerTransform.position + (Vector3)offset;
-
-            if (prefabToSpawn != null && PoolManager.TryGetInstance(out PoolManager poolManager))
+            if (count <= GameConfig.Runtime.EmptyCollectionCount ||
+                enemyPrefabs == null ||
+                enemyPrefabs.Length == GameConfig.Runtime.EmptyCollectionCount)
             {
+                return;
+            }
+
+            EnsureSpawnBatchCapacity(count);
+            for (int index = GameConfig.Runtime.FirstIndex; index < count; index++)
+            {
+                // Preserve the established PRNG order: prefab choice, then angle,
+                // once for each requested spawn.
+                spawnPrefabBatch[index] = enemyPrefabs[
+                    EFYVBackend.Core.Math.FastRandom.Range(
+                        GameConfig.Spawner.RandomMinIndex,
+                        enemyPrefabs.Length)];
+                spawnAngles[index] = RuntimeGameplayCompute.NormalizeRadians(
+                    EFYVBackend.Core.Math.FastRandom.Range(
+                        GameConfig.Spawner.MinRadians,
+                        EFYVBackend.Core.Data.EFYVLabyrinthConfig.Backend.Math.TwoPI) -
+                    EFYVBackend.Core.Data.EFYVLabyrinthConfig.Backend.Math.PI);
+            }
+
+            RuntimeGameplayCompute.SinCosRadians(
+                spawnAngles.AsSpan(0, count),
+                spawnSines.AsSpan(0, count),
+                spawnCosines.AsSpan(0, count));
+
+            if (!PoolManager.TryGetInstance(out PoolManager poolManager))
+            {
+                return;
+            }
+
+            Vector3 playerPosition = playerTransform.position;
+            for (int index = GameConfig.Runtime.FirstIndex; index < count; index++)
+            {
+                Enemy prefabToSpawn = spawnPrefabBatch[index];
+                if (prefabToSpawn == null)
+                {
+                    continue;
+                }
+
+                Vector2 offset = new Vector2(spawnCosines[index], spawnSines[index]) *
+                    spawnRadius;
+                Vector3 spawnPosition = playerPosition + (Vector3)offset;
                 poolManager.Spawn(prefabToSpawn, spawnPosition, Quaternion.identity);
             }
+        }
+
+        private void EnsureSpawnBatchCapacity(int required)
+        {
+            if (spawnAngles.Length >= required)
+            {
+                return;
+            }
+
+            int capacity = 4;
+            while (capacity < required)
+            {
+                capacity = checked(capacity * 2);
+            }
+            Array.Resize(ref spawnPrefabBatch, capacity);
+            Array.Resize(ref spawnAngles, capacity);
+            Array.Resize(ref spawnSines, capacity);
+            Array.Resize(ref spawnCosines, capacity);
         }
     }
 }

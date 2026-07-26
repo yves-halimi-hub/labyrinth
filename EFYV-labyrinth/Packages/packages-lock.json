@@ -1,5 +1,11 @@
 {
   "dependencies": {
+    "com.efyv.runtime.kernel": {
+      "version": "file:../../Shared/EFYV.Runtime.Kernel.Unity",
+      "depth": 0,
+      "source": "local",
+      "dependencies": {}
+    },
     "com.efyv.bclcompat": {
       "version": "file:com.efyv.bclcompat",
       "depth": 0,

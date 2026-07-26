@@ -47,6 +47,7 @@ internal static partial class Program
             ("prop animation, doors, chests, and coins", TestEntitiesPropAnimationDoorsChestsAndCoins),
             ("merchant, sarcophage, and purchasables", TestEntitiesMerchantSarcophageAndPurchasables),
             ("weapon cooldown state machine", TestWeaponsCooldownStateMachine),
+            ("runtime kernel gameplay batches", TestRuntimeKernelGameplayBatches),
             ("magic wand targeting and upgrades", TestWeaponsMagicWandTargetingAndUpgrades),
             ("aura and melee boundary combat", TestWeaponsAuraMeleeBoundaries),
             ("orbital rotation and stacked damage", TestWeaponsOrbitalRotationAndDamage),

@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "com.efyv.runtime.kernel": "file:../../Shared/EFYV.Runtime.Kernel.Unity",
     "com.efyv.runtime.media": "file:../../Shared/EFYV.Runtime.Media",
     "com.efyv.labybackend": "file:../../EFYV-labybackend/Core",
     "com.unity.2d.sprite": "1.0.0",

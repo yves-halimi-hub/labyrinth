@@ -1,4 +1,6 @@
 using UnityEngine;
+using System;
+using EFYV.Core.Compute;
 using EFYV.Core.Managers;
 using System.Collections.Generic;
 using GameConfig = EFYVBackend.Core.Data.EFYVLabyrinthConfig.Game;
@@ -50,15 +52,23 @@ namespace EFYV.Core.Entities.Environment.Implementations
             
             int count = GameConfig.Map.SarcophageAmbushCount;
             float radius = GameConfig.Map.SarcophageAmbushRadius;
+            if (count <= GameConfig.Runtime.EmptyCollectionCount) return;
+
+            Span<float> angles = stackalloc float[count];
+            Span<float> sines = stackalloc float[count];
+            Span<float> cosines = stackalloc float[count];
+            for (int i = 0; i < count; i++)
+            {
+                angles[i] = RuntimeGameplayCompute.NormalizeRadians(
+                    EFYVBackend.Core.Math.FastMath.GetCircleDistributionAngleRad(i, count));
+            }
+            RuntimeGameplayCompute.SinCosRadians(angles, sines, cosines);
             
             // Spawn mummies in a circle around the sarcophage
             for (int i = 0; i < count; i++)
             {
-                float rad = EFYVBackend.Core.Math.FastMath.GetCircleDistributionAngleRad(i, count);
-                
-                EFYVBackend.Core.Math.FastMath.FastSinCosTaylor(rad, out float sin, out float cos);
-                float x = cos * radius;
-                float y = sin * radius;
+                float x = cosines[i] * radius;
+                float y = sines[i] * radius;
                 
                 Vector3 spawnPos = transform.position + new Vector3(x, y, GameConfig.EnvironmentData.PlanarZOffset);
                 poolManager.Spawn(MummyPrefab, spawnPos, Quaternion.identity);

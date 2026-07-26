@@ -14,4 +14,12 @@
     <Compile Include="..\Assets\Scripts\**\*.cs" LinkBase="Game" />
     <Compile Include="*.cs" />
   </ItemGroup>
+  <ItemGroup Condition="Exists('..\..\..\..\..\EFYV-runtime-kernel\bindings\dotnet\Efyv.RuntimeKernel\Efyv.RuntimeKernel.csproj')">
+    <ProjectReference Include="..\..\..\..\..\EFYV-runtime-kernel\bindings\dotnet\Efyv.RuntimeKernel\Efyv.RuntimeKernel.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="!Exists('..\..\..\..\..\EFYV-runtime-kernel\bindings\dotnet\Efyv.RuntimeKernel\Efyv.RuntimeKernel.csproj')">
+    <Reference Include="Efyv.RuntimeKernel">
+      <HintPath>..\..\Shared\EFYV.Runtime.Kernel.Unity\Runtime\Managed\Efyv.RuntimeKernel.dll</HintPath>
+    </Reference>
+  </ItemGroup>
 </Project>

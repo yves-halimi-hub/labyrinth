@@ -31,6 +31,7 @@ GAME_ROOT = TESTS_DIR.parent
 REPO_ROOT = GAME_ROOT.parent
 BACKEND_CORE = REPO_ROOT / "EFYV-labybackend" / "Core"
 RUNTIME_MEDIA = REPO_ROOT / "Shared" / "EFYV.Runtime.Media"
+RUNTIME_KERNEL = REPO_ROOT / "Shared" / "EFYV.Runtime.Kernel.Unity"
 BCL_PACKAGE = GAME_ROOT / "Packages" / "com.efyv.bclcompat"
 SCENE_PATH = GAME_ROOT / "Assets" / "Scenes" / "Labyrinth.unity"
 CONFIG_PATH = BACKEND_CORE / "Data" / "EFYV-LabyrinthConfig.cs"
@@ -39,6 +40,7 @@ META_ROOTS = (
     GAME_ROOT / "Assets",
     BACKEND_CORE,
     RUNTIME_MEDIA,
+    RUNTIME_KERNEL,
     BCL_PACKAGE,
 )
 
@@ -171,11 +173,79 @@ class PackageGraphTests(unittest.TestCase):
         self.assertEqual("com.efyv.runtime.media", json.loads(
             (media_target / "package.json").read_text(encoding="utf-8"))["name"])
 
+        kernel_dependency = manifest["dependencies"]["com.efyv.runtime.kernel"]
+        self.assertEqual("file:../../Shared/EFYV.Runtime.Kernel.Unity", kernel_dependency)
+        kernel_target = (GAME_ROOT / "Packages" /
+                         "../../Shared/EFYV.Runtime.Kernel.Unity").resolve()
+        self.assertEqual("com.efyv.runtime.kernel", json.loads(
+            (kernel_target / "package.json").read_text(encoding="utf-8"))["name"])
+        binding = kernel_target / "Runtime" / "Managed" / "Efyv.RuntimeKernel.dll"
+        self.assertEqual(b"MZ", binding.read_bytes()[:2])
+        self.assertTrue(binding.with_name(binding.name + ".meta").exists())
+
     def test_backend_package_root_excludes_tests(self):
         # The package root is Core on purpose: the sibling Tests directory and
         # its bin/obj DLLs must never be imported by Unity (duplicate types).
         self.assertFalse((BACKEND_CORE / "Tests").exists())
         self.assertTrue((BACKEND_CORE.parent / "Tests").is_dir())
+
+    def test_runtime_kernel_adapter_metadata_provenance_and_docs(self):
+        package = json.loads(
+            (RUNTIME_KERNEL / "package.json").read_text(encoding="utf-8"))
+        self.assertEqual("0.2.0", package["version"])
+
+        project = (RUNTIME_KERNEL / "Source~" /
+                   "Efyv.RuntimeKernel.Unity.csproj").read_text(encoding="utf-8")
+        for element, value in (
+            ("Version", "0.2.0"),
+            ("AssemblyVersion", "0.2.0.0"),
+            ("FileVersion", "0.2.0.0"),
+            ("InformationalVersion", "0.2.0"),
+        ):
+            self.assertIn(f"<{element}>{value}</{element}>", project)
+        managed_deps = json.loads((
+            RUNTIME_KERNEL / "Runtime" / "Managed" /
+            "Efyv.RuntimeKernel.deps.json").read_text(encoding="utf-8"))
+        self.assertIn("Efyv.RuntimeKernel/0.2.0", managed_deps["libraries"])
+
+        expected_readmes = (
+            RUNTIME_KERNEL / "README.md",
+            RUNTIME_KERNEL / "Runtime" / "README.md",
+            RUNTIME_KERNEL / "Runtime" / "Managed" / "README.md",
+            RUNTIME_KERNEL / "Runtime" / "Plugins" / "README.md",
+            RUNTIME_KERNEL / "Runtime" / "Plugins" / "x86_64" / "README.md",
+            RUNTIME_KERNEL / "Source~" / "README.md",
+        )
+        for readme in expected_readmes:
+            self.assertTrue(readme.is_file(), "missing package README " + str(readme))
+
+        markdown_link = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
+        for readme in expected_readmes:
+            for target in markdown_link.findall(readme.read_text(encoding="utf-8")):
+                relative_target = target.split("#", 1)[0]
+                if not relative_target or "://" in relative_target:
+                    continue
+                self.assertTrue(
+                    (readme.parent / relative_target).resolve().exists(),
+                    str(readme) + " has a broken link to " + target)
+
+        provenance = json.loads((
+            RUNTIME_KERNEL / "Runtime" / "Plugins" / "x86_64" /
+            "efyv_runtime_kernel.provenance.json").read_text(encoding="utf-8"))
+        self.assertEqual(1, provenance["schemaVersion"])
+        self.assertEqual("efyv_runtime_kernel.dll", provenance["artifact"])
+        self.assertEqual("0.2.0", provenance["packageVersion"])
+        self.assertIn(
+            provenance["status"],
+            {"pending-final-native-rebuild", "verified-build"})
+
+        build_script = (RUNTIME_KERNEL / "Source~" /
+                        "Build-UnityAdapter.ps1").read_text(encoding="utf-8")
+        self.assertRegex(build_script, r"gcc@sha256:[0-9a-f]{64}")
+        self.assertIn("runtimeBuildInputTreeSha256", build_script)
+        self.assertIn("nativeArtifactSha256", build_script)
+        self.assertIn("-HasHostCmake $false", build_script)
+        self.assertIn("No-host-CMake Auto resolution=Docker", build_script)
 
     def test_bcl_compat_package_contents(self):
         package = json.loads((BCL_PACKAGE / "package.json").read_text(encoding="utf-8"))

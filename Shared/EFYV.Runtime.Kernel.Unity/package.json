@@ -1,0 +1,7 @@
+{
+  "name": "com.efyv.runtime.kernel",
+  "version": "0.2.0",
+  "displayName": "EFYV Runtime Kernel",
+  "description": "Unity adapter generated from the official Efyv.RuntimeKernel .NET binding, plus platform-native runtime plugins.",
+  "unity": "6000.6"
+}

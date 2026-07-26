@@ -1,5 +1,5 @@
+using System;
 using UnityEngine;
-using EFYV.Core.Entities;
 using EFYV.Core.Utils;
 using GameConfig = EFYVBackend.Core.Data.EFYVLabyrinthConfig.Game;
 
@@ -9,6 +9,7 @@ namespace EFYV.Core.Weapons.Types
     public abstract class SplashWeapon : Weapon
     {
         public GameObject splashVisualPrefab;
+        private Vector3[] splashPoints = Array.Empty<Vector3>();
         
         public float splashRadius
         {
@@ -44,12 +45,14 @@ namespace EFYV.Core.Weapons.Types
         public override void Fire()
         {
             Vector3 center = transform.position;
-            float sqrRadius = damageRadius * damageRadius;
+            if (splashCount <= GameConfig.Runtime.EmptyCollectionCount) return;
+            EnsureSplashCapacity(splashCount);
 
             for (int s = 0; s < splashCount; s++)
             {
                 // Pick a random point near the player
                 Vector3 splashPoint = center + VectorExtensions.GetRandomOffset(splashRadius, GameConfig.Weapons.DefaultZOffset);
+                splashPoints[s] = splashPoint;
 
                 if (splashVisualPrefab != null)
                 {
@@ -59,10 +62,23 @@ namespace EFYV.Core.Weapons.Types
                         Managers.PoolManager.Instance.DespawnGameObject(vfx, Managers.PoolManager.GetPoolKey(splashVisualPrefab), GameConfig.Weapons.Splash.VfxLifetime);
                     }
                 }
-                
-                // Faction-aware radius damage around each splash point.
-                DamageTargetsInRadius(splashPoint, sqrRadius, BaseDamage);
             }
+
+            DamageTargetsInRadiusBatch(
+                splashPoints.AsSpan(0, splashCount),
+                damageRadius,
+                BaseDamage);
+        }
+
+        private void EnsureSplashCapacity(int required)
+        {
+            if (splashPoints.Length >= required) return;
+            int capacity = 4;
+            while (capacity < required)
+            {
+                capacity = checked(capacity * 2);
+            }
+            Array.Resize(ref splashPoints, capacity);
         }
     }
 }

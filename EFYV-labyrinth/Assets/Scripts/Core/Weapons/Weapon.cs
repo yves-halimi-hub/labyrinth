@@ -1,4 +1,6 @@
+using System;
 using UnityEngine;
+using EFYV.Core.Compute;
 using EFYV.Core.Data;
 using EFYV.Core.Entities;
 using EFYV.Core.Utils;
@@ -85,7 +87,7 @@ namespace EFYV.Core.Weapons
             }
             else
             {
-                Enemy nearest = FindNearestEnemy(origin);
+                Enemy nearest = RuntimeGameplayCompute.FindNearestEnemy(origin);
                 if (nearest != null)
                 {
                     targetPosition = nearest.entityTransform.position;
@@ -97,15 +99,17 @@ namespace EFYV.Core.Weapons
             return false;
         }
 
-        // Faction-aware planar radius damage: player-owned weapons sweep the packed
-        // enemy list, enemy-owned weapons test only the player singleton. No
-        // allocations, no LINQ - safe for per-tick hot paths.
-        protected void DamageTargetsInRadius(Vector3 center, float squaredRadius, float damage)
+        // Faction-aware planar radius damage. Player-owned weapons hand one
+        // point query to the native Runtime Kernel, then mutate the returned
+        // Unity enemies in the former descending packed-list order.
+        protected void DamageTargetsInRadius(Vector3 center, float radius, float damage)
         {
+            float effectiveRadius = AbsoluteRadius(radius);
             if (OwnerFaction == Faction.Enemy)
             {
                 PlayerController player = PlayerController.Instance;
                 if (player == null || player.IsDead) return;
+                float squaredRadius = effectiveRadius * effectiveRadius;
                 if (player.entityTransform.position.FastSqrDistance(center) <= squaredRadius)
                 {
                     player.TakeDamage(damage);
@@ -113,41 +117,72 @@ namespace EFYV.Core.Weapons
             }
             else
             {
-                Enemy.ApplyDamageInRadius(center, squaredRadius, damage);
+                RuntimeGameplayCompute.QueryEnemyRadius(center, effectiveRadius);
+                DamageEnemyQuery(GameConfig.Runtime.FirstIndex, damage);
             }
         }
 
-        protected static Enemy FindNearestEnemy(Vector3 origin)
+        // Drop, splash, and orbital weapons submit every center in one native
+        // query batch. Domain mutations stay here in C# after native returns.
+        protected void DamageTargetsInRadiusBatch(
+            ReadOnlySpan<Vector3> centers,
+            float radius,
+            float damage)
         {
-            // MIGRATION: Completely eliminated FindObjectsOfType.
-            // We now iterate over a perfectly packed C# List representing only active enemies in memory.
-            var allEnemies = Enemy.ActiveEnemies;
-            Enemy nearest = null;
-            float minDistanceSqr = float.MaxValue;
-
-            // Notice we use a basic for-loop instead of foreach for even more performance (no enumerator GC)
-            int count = allEnemies.Count;
-            for (int i = GameConfig.Weapons.LoopStartIndex; i < count; i++)
+            if (centers.Length == GameConfig.Runtime.EmptyCollectionCount)
             {
-                Enemy enemy = allEnemies[i];
-
-                // PERFORMANCE: Broad-Phase 1D Heuristic Culling
-                // We instantly cull enemies that are too far away on the X-axis before ever calculating the Y-axis.
-                // This eliminates ~50% to 75% of the multiplication operations inside this O(N) loop!
-                float dx = origin.x - enemy.entityTransform.position.x;
-                if ((dx * dx) >= minDistanceSqr) continue;
-
-                float dy = origin.y - enemy.entityTransform.position.y;
-                float distSqr = (dx * dx) + (dy * dy);
-
-                if (distSqr < minDistanceSqr)
-                {
-                    minDistanceSqr = distSqr;
-                    nearest = enemy;
-                }
+                return;
             }
 
-            return nearest;
+            float effectiveRadius = AbsoluteRadius(radius);
+            if (OwnerFaction == Faction.Enemy)
+            {
+                PlayerController player = PlayerController.Instance;
+                if (player == null || player.IsDead) return;
+
+                float squaredRadius = effectiveRadius * effectiveRadius;
+                for (int queryIndex = GameConfig.Runtime.FirstIndex;
+                    queryIndex < centers.Length && !player.IsDead;
+                    queryIndex++)
+                {
+                    if (player.entityTransform.position.FastSqrDistance(centers[queryIndex]) <=
+                        squaredRadius)
+                    {
+                        player.TakeDamage(damage);
+                    }
+                }
+                return;
+            }
+
+            RuntimeGameplayCompute.QueryEnemyRadii(centers, effectiveRadius);
+            for (int queryIndex = GameConfig.Runtime.FirstIndex;
+                queryIndex < centers.Length;
+                queryIndex++)
+            {
+                DamageEnemyQuery(queryIndex, damage);
+            }
+        }
+
+        private static void DamageEnemyQuery(int queryIndex, float damage)
+        {
+            int start = RuntimeGameplayCompute.QueryHitStart(queryIndex);
+            for (int hitIndex = RuntimeGameplayCompute.QueryHitEnd(queryIndex) - 1;
+                hitIndex >= start;
+                hitIndex--)
+            {
+                Enemy enemy = RuntimeGameplayCompute.EnemyAtHit(hitIndex);
+                // A prior center in the same native snapshot may already have
+                // killed and swap-removed this enemy.
+                if (enemy.IsSpawned)
+                {
+                    enemy.TakeDamage(damage);
+                }
+            }
+        }
+
+        private static float AbsoluteRadius(float radius)
+        {
+            return radius < GameConfig.Runtime.UnitIntervalMin ? -radius : radius;
         }
     }
 }

@@ -34,14 +34,18 @@ namespace EFYV.Core.Data
 
             float frameWidth = atlas.FrameWidth / SharedConfig.PixelsPerUnit;
             float frameHeight = atlas.FrameHeight / SharedConfig.PixelsPerUnit;
+            float authoredX = authoredBounds.x / SharedConfig.PixelsPerUnit;
+            float authoredY = authoredBounds.y / SharedConfig.PixelsPerUnit;
+            float authoredWidth = authoredBounds.width / SharedConfig.PixelsPerUnit;
+            float authoredHeight = authoredBounds.height / SharedConfig.PixelsPerUnit;
             float pivot = GameConfig.Importer.SpritePivotNormalized;
             center = new Vector3(
-                authoredBounds.x + (authoredBounds.width * pivot) - (frameWidth * pivot),
-                (frameHeight * pivot) - authoredBounds.y - (authoredBounds.height * pivot),
+                authoredX + (authoredWidth * pivot) - (frameWidth * pivot),
+                (frameHeight * pivot) - authoredY - (authoredHeight * pivot),
                 GameConfig.Runtime.EmptyCollectionCount);
             size = new Vector3(
-                authoredBounds.width,
-                authoredBounds.height,
+                authoredWidth,
+                authoredHeight,
                 GameConfig.Runtime.EmptyCollectionCount);
             return true;
         }
