@@ -1,6 +1,8 @@
 # EFYV Labyrinth System
 
-[EFYV Games](https://github.com/yves-halimi-hub/EFYV-games) / [Game repositories](https://github.com/yves-halimi-hub/EFYV-games/tree/main/games) / Labyrinth
+[EFYV System](https://github.com/yves-halimi-hub/EFYV-system) /
+[EFYV Games](https://github.com/yves-halimi-hub/EFYV-games) /
+[Game repositories](https://github.com/yves-halimi-hub/EFYV-games/tree/main/games) / Labyrinth
 
 This repository contains the Labyrinth game, its shared runtime foundation, and the declaration-driven
 LabyMake EFYV node.
@@ -11,6 +13,7 @@ LabyMake EFYV node.
 | --- | --- |
 | Shared schemas, memory, math, collections, export, or save primitives | [EFYV LabyBackend](EFYV-labybackend/README.md) |
 | Generic media behavior and the Labyrinth artifact translator | [Shared packages](Shared/README.md) |
+| Shared native trigonometry, geometry, and spatial queries used by gameplay | [Runtime Kernel Unity adapter](Shared/EFYV.Runtime.Kernel.Unity/README.md) |
 | The asset designer, drawing tools, history, persistence, jobs, or browser handoff | [LabyMake node](EFYV-labymake/README.md) |
 | LabyMake validation and deterministic Unity artifact export | [`labymake-engine`](EFYV-labymake/services/labymake-engine/) |
 | Unity gameplay, entities, managers, weapons, pooling, import, or editor integration | [EFYV Labyrinth](EFYV-labyrinth/README.md) |
@@ -28,9 +31,18 @@ EFYV-labymake --> EFYV Platform --> labymake-engine --> EFYV.Labyrinth.Artifacts
                                                                     |
                                                                     v
                                                              EFYV-labyrinth
+
+EFYV Runtime Kernel --> EFYV.Runtime.Kernel.Unity --> grouped gameplay compute
+          |
+          `-- optional native RGBA/CRC --> EFYV.Runtime.Media --> artifacts + backend media
 ```
 
-- **LabyBackend** is the dependency foundation. It owns compact data layouts, deterministic algorithms, bounded collections, file safety, binary persistence, and export primitives.
+- **Runtime Kernel** owns shared trigonometry, geometry, spatial queries, and native media
+  primitives. The generated Unity adapter preserves the official ABI and exact native provenance;
+  Runtime Media keeps its bit-compatible managed path for independently buildable domain tools.
+- **LabyBackend** is the Labyrinth domain foundation. It owns compact data layouts, bounded
+  collections, file safety, binary persistence, export rules, authored raster deformation, and
+  compatibility behavior; it does not reimplement shared gameplay geometry or spatial search.
 - **LabyMake** is an ordinary EFYV Maker node. EFYV Platform owns editable state, tools, history,
   persistence, jobs, artifacts, and browser-folder handoff; `labymake-engine` owns only bounded,
   stateless domain validation and deterministic export.
@@ -68,8 +80,8 @@ The game component also has Python contract tests:
 python -m unittest discover -s EFYV-labyrinth\Tests -p "test_*.py" -v
 ```
 
-The retired Avalonia/session designer was deleted. The Unity project at `EFYV-labyrinth` opens in
-Unity `6000.6.0b4` (pinned in `ProjectSettings/ProjectVersion.txt`).
+The Unity project at `EFYV-labyrinth` opens in Unity `6000.6.0b4` (pinned in
+`ProjectSettings/ProjectVersion.txt`).
 
 ## Platform integration boundary
 

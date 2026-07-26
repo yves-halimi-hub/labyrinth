@@ -20,6 +20,11 @@ artifacts and are not packaged into the Kubernetes node.
 - [Application declaration](app/README.md): EFYV pages, maker configuration, and integrations.
 - [Services](services/README.md): the node-owned engine and its protocol boundary.
 
+The `app/` declarations and `services/labymake-engine/` are the hand-authored boundaries.
+`.efyv/`, `infra/`, and `services/frontend/` are generated Platform plans, topology, configuration,
+or frontend output; their nearest owning README describes them, and they must not be edited as
+independent modules.
+
 Compile and regenerate through the shared platform tooling:
 
 ```powershell

@@ -18,15 +18,19 @@ namespaces, unsafe-code setting, schema offsets, and serialized field names.
 ## Dependencies and consumers
 
 - Requires the .NET 8 SDK for the verification project.
-- Uses only the .NET base class library, including `System.Text.Json`; there are no
-  third-party packages.
+- Uses the .NET base class library, including `System.Text.Json`, plus the first-party
+  [`EFYV.Runtime.Media`](../Shared/EFYV.Runtime.Media/README.md) project; there are no third-party
+  packages. Runtime Media centralizes RGBA, PNG, and CRC behavior and can opt into the canonical
+  native Runtime Kernel without exposing native ownership to this domain package.
 - Unsafe code is required for fixed schema blocks, raw buffers, pixel operations,
   PNG encoding, and binary saves.
 - The declaration-driven [LabyMake node](../EFYV-labymake/README.md) and its narrow
   [domain engine](../EFYV-labymake/services/labymake-engine/) publish the bounded artifact contract consumed by
   the game. Maker document/session persistence belongs to the EFYV platform, not this library.
 - [EFYV-labyrinth](../EFYV-labyrinth/) consumes the same schemas, models,
-  collections, math, persistence, and importer/export metadata contracts.
+  collections, domain math, persistence, and importer/export metadata contracts. Shared gameplay
+  trigonometry and spatial queries enter Unity through the separate
+  [Runtime Kernel adapter](../Shared/EFYV.Runtime.Kernel.Unity/README.md).
 
 ## Layout
 

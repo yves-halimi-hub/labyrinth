@@ -6,7 +6,20 @@ Editor-only bridge from LabyMake output to runtime assets.
 
 ## Files
 
-- [`EFYVPixelArtImporter.cs`](EFYVPixelArtImporter.cs): validates metadata through the shared backend `TryValidateAtlasMetadata`, validates attachment records with `TryValidateAttachments` (reporting the offending index), and validates tileset manifests with `TryValidateTilesetManifest` against the sibling atlas block. It configures pixel-art slicing, maps schema properties from `Shared.AssetSchemaFieldManifest`, creates typed assets, links directional imports, and stores converted attachment records on the schema-backed base (absent flips resolve to false; a document without attachments stores null). A document carrying a tileset manifest materializes as `TilesetAssetData` (tile size, manifest names, and sliced sprites in tile-ID order) regardless of the named `GameAssetData`-family factory. Every rejection logs a cause-specific error. Unknown schema keys are logged and parked as raw JSON text in the asset's string-keyed custom-property store; an import without unknown keys clears stale entries. `OnPostprocessAllAssets` deduplicates each metadata file with its sibling PNG, imports each once, and coalesces `AssetDatabase.SaveAssets()` into one flush for the group, skipping the flush when nothing changed. `EnsureTextureImportIsCurrent` forces synchronous texture import only when settings or slices are stale and the caller immediately needs the sliced sprites.
+- [`EFYVPixelArtImporter.cs`](EFYVPixelArtImporter.cs) is the typed art-import boundary:
+  - It runs shared backend atlas, attachment, and tileset-manifest validation and reports the exact
+    rejected record or cause.
+  - It configures pixel slicing, maps `Shared.AssetSchemaFieldManifest`, creates typed assets, links
+    directional imports, and stores converted attachments (`false` for absent flips; `null` when the
+    document has none).
+  - A tileset manifest always materializes as `TilesetAssetData`, with tile size, names, and sliced
+    sprites in tile-ID order, regardless of the named `GameAssetData`-family factory.
+  - Unknown schema keys are logged and stored as raw JSON in the asset's custom-property store; an
+    import without unknown keys clears stale entries.
+  - `OnPostprocessAllAssets` deduplicates metadata/PNG siblings, imports each once, and coalesces
+    `AssetDatabase.SaveAssets()` into one flush only when something changed.
+    `EnsureTextureImportIsCurrent` forces synchronous import only when stale settings or slices are
+    immediately required.
 - [`EFYVMapImporter.cs`](EFYVMapImporter.cs): parses published `.efyvmap` binary maps through the backend `FastMapImporter.TryParse` tri-state, reports cause-specific missing/malformed/unsafe-stem/type-mismatch errors, creates or updates `<stem>_Map.asset`, and links the sibling `<tilesetName>_Data.asset`. It warns when the tileset has no sliced sprites, requiring the tileset to be published and imported before the map.
 - [`EFYVRawArtWatcher.cs`](EFYVRawArtWatcher.cs): `[InitializeOnLoad]` debounced `EditorApplication.update` poller over `Assets/RawArt` that imports freshly published art without waiting for Unity to regain focus (works in Play Mode). The debounce/coalescing state machine (`RawArtChangeTracker`) is plain C# and unit-tested headlessly.
 - [`EFYVLiveDebugBridge.cs`](EFYVLiveDebugBridge.cs): coalesces Play Mode refreshes, updates matching scene entities/props, and records the most recently imported or refreshed asset (`LastRefreshedAsset` plus a `RefreshVersion` counter, also tracked in edit mode) so the spawn palette can auto-offer it.

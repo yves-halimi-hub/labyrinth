@@ -1,5 +1,7 @@
 # EFYV BCL Compatibility
 
+[Back to Unity packages](../README.md)
+
 Embedded Unity package carrying the NuGet assemblies `EFYVBackend.Core` needs but
 Unity's Mono/netstandard2.1 scripting profile does not ship:
 
@@ -9,7 +11,7 @@ Unity's Mono/netstandard2.1 scripting profile does not ship:
 | `System.Text.Encodings.Web.dll` | NuGet 8.0.0 | netstandard2.0 |
 | `System.Runtime.CompilerServices.Unsafe.dll` | NuGet 6.0.0 | netstandard2.0 |
 | `Microsoft.Bcl.AsyncInterfaces.dll` | NuGet 8.0.0 | netstandard2.1 |
-| `EFYV.ZLibCompat.dll` | built from [`ZLibCompatSource~`](ZLibCompatSource~/ZLibStream.cs) | netstandard2.0 |
+| `EFYV.ZLibCompat.dll` | built from [`ZLibCompatSource~`](ZLibCompatSource~/README.md) | netstandard2.0 |
 
 `EFYV.ZLibCompat.dll` provides `System.IO.Compression.ZLibStream` (a .NET 6+
 API the backend PNG encoder/decoder uses) as a thin zlib wrapper over

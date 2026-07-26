@@ -4,6 +4,15 @@
 
 Engine-neutral scalar, raster, deformation, procedural, and random algorithms.
 
+## Runtime ownership boundary
+
+The periodic approximation in `FastMath` remains for authored raster-deformation frames and
+document compatibility. Unity gameplay trigonometry, collision, and grouped enemy spatial queries
+use the official Runtime Kernel through
+[`RuntimeGameplayCompute`](../../../EFYV-labyrinth/Assets/Scripts/Core/Compute/README.md). Scalar
+direction selection, deterministic random streams, drawing tools, and procedural Labyrinth rules
+remain here because they are domain behavior rather than a second general geometry engine.
+
 ## Important files
 
 - [FastMath.cs](FastMath.cs): clamps, wrapping, squared distance, normalization,
@@ -49,8 +58,9 @@ Engine-neutral scalar, raster, deformation, procedural, and random algorithms.
 - Source and destination buffers should be distinct where an algorithm performs a
   transform; procedural smoothing and the tile generators explicitly reject an
   aliased work buffer.
-- Approximate trig and normalization are chosen for speed and bounded game/editor
-  use, not bit-for-bit parity with `System.Math` at every magnitude.
+- Approximate trig and normalization are chosen for bounded authored raster deformation and
+  compatibility behavior, not gameplay geometry and not bit-for-bit parity with `System.Math` at
+  every magnitude.
   `Get4WayDirection` resolves special values (signed zero, NaN, infinities) by
   raw bit inspection; the exact semantics are documented at the method and pinned
   by the verification suite as a deliberate contract.

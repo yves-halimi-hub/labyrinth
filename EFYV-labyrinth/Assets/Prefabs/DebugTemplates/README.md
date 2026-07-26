@@ -1,6 +1,6 @@
 # Debug spawn template prefabs
 
-[Up to game](../../../README.md)
+[Up to Unity prefabs](../README.md)
 
 Scene-independent, generic per-archetype template prefabs that the
 [data-to-prefab factory](../../Scripts/Core/Spawning/README.md) clones. One
